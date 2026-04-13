@@ -4,7 +4,7 @@
   "description": "FinChip Protocol CLI — acquire, launch, and trade on-chain skill tokens",
   "type": "module",
   "bin": {
-    "finchip": "./bin/finchip.js"
+    "finchip": "bin/finchip.js"
   },
   "scripts": {
     "start": "node bin/finchip.js"
@@ -16,6 +16,13 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "keywords": ["finchip", "web3", "cli", "ai", "agent", "blockchain"],
+  "keywords": [
+    "finchip",
+    "web3",
+    "cli",
+    "ai",
+    "agent",
+    "blockchain"
+  ],
   "license": "MIT"
 }
