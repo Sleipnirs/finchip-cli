@@ -6,6 +6,7 @@ import { cmdRegister }                                      from '../src/command
 import { cmdMarketList, cmdMarketSearch }                   from '../src/commands/market.js';
 import { cmdAcquire }                                       from '../src/commands/acquire.js';
 import { cmdLaunch }                                        from '../src/commands/launch.js';
+import { cmdPrepare }                                       from '../src/commands/prepare.js';
 import { cmdTradeList, cmdTradeBuy, cmdTradeSell, cmdTradeCancel } from '../src/commands/trade.js';
 import { cmdConfigGet, cmdConfigSet, cmdConfigUnset }       from '../src/commands/config.js';
 import { c } from '../src/utils.js';
@@ -130,6 +131,23 @@ config
   .command('unset <key>')
   .description('Remove a config value')
   .action(cmdConfigUnset);
+
+// ── prepare ──────────────────────────────────────────────────────────────────
+program
+  .command('prepare <filepath>')
+  .description('Full pipeline: encrypt + IPFS + Lit + deploy + setLitData (one command)')
+  .option('--name <name>',         'Skill name (default: filename)')
+  .option('--slug <slug>',         'Unique slug, must end with _finchip')
+  .option('--price <price>',       'License price in ETH/BNB', '0.01')
+  .option('--category <category>', 'Skill category (Finance, Code, Data…)', 'General')
+  .option('--description <desc>',  'Short description')
+  .option('--image-uri <uri>',     'IPFS URI for cover image')
+  .option('--max-supply <n>',      'Max licenses (0 = unlimited)', '0')
+  .option('--royalty-bps <bps>',   'Royalty basis points (250 = 2.5%)', '250')
+  .option('--license-type <type>', 'License type (MIT, Apache, Commercial)', 'MIT')
+  .option('--encrypt <mode>',      'Encryption: finchip (default) | lit | agent', 'finchip')
+  .option('--chain <chainId>',     'Chain ID: 56 (BSC) or 8453 (Base)', '56')
+  .action(cmdPrepare);
 
 // ── help footer ───────────────────────────────────────────────────────────────
 program.addHelpText('after', `

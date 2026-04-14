@@ -1,10 +1,10 @@
 {
   "name": "finchip-cli",
-  "version": "0.1.1",
-  "description": "FinChip Protocol CLI — acquire, launch, and trade on-chain skill tokens",
+  "version": "0.2.0",
+  "description": "FinChip Protocol CLI \u2014 acquire, launch, and trade on-chain skill tokens",
   "type": "module",
   "bin": {
-    "finchip": "bin/finchip.js"
+    "finchip": "./bin/finchip.js"
   },
   "scripts": {
     "start": "node bin/finchip.js"
