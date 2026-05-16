@@ -1,7 +1,7 @@
 {
   "name": "finchip-cli",
-  "version": "0.2.0",
-  "description": "FinChip Protocol CLI \u2014 acquire, launch, and trade on-chain skill tokens",
+  "version": "0.3.0",
+  "description": "FinChip Protocol CLI — A2A-native client for acquiring, launching, and trading on-chain AI skill tokens across 5 EVM chains",
   "type": "module",
   "bin": {
     "finchip": "./bin/finchip.js"
@@ -22,7 +22,32 @@
     "cli",
     "ai",
     "agent",
-    "blockchain"
+    "a2a",
+    "acp",
+    "mcp",
+    "ucp",
+    "x402",
+    "blockchain",
+    "erc1155",
+    "erc721",
+    "bsc",
+    "ethereum",
+    "base",
+    "arbitrum",
+    "optimism"
   ],
+  "files": [
+    "bin/",
+    "src/",
+    "README.md"
+  ],
+  "homepage": "https://finchip.ai/a2aentry",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sleipnirs/finchip-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Sleipnirs/finchip-cli/issues"
+  },
   "license": "MIT"
 }
