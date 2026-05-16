@@ -1,29 +1,30 @@
+// finchip market list / search — browse chips via discovery + ChipRegistry
 import { loadConfig } from '../config.js';
+import { resolveProtocol } from '../discovery.js';
 import { getPublicClient } from '../client.js';
-import { ADDRESSES, CHIP_REGISTRY_ABI, CHIP_ABI } from '../contracts.js';
-import { ok, err, inf, hd, sep, fmtAddr, fmtWei, fmtChain, c } from '../utils.js';
+import { CHIP_REGISTRY_ABI, CHIP_ABI } from '../protocol.js';
+import { resolveChain } from '../chains.js';
+import { ok, err, inf, hd, sep, fmtWei, fmtChain, c } from '../utils.js';
 
 export async function cmdMarketList(options) {
-  const cfg     = loadConfig();
-  const chainId = parseInt(options.chain || cfg.chain || 56);
-  const limit   = parseInt(options.limit || '20');
-  const filter  = options.category?.toLowerCase();
+  const cfg    = loadConfig();
+  const chain  = resolveChain(options.chain || cfg.chain);
+  const limit  = parseInt(options.limit || '20');
+  const filter = options.category?.toLowerCase();
 
-  const regAddr = ADDRESSES.chipRegistry[chainId];
-  if (!regAddr) { err(`Unsupported chain: ${chainId}`); process.exit(1); }
-
-  const symbol = chainId === 56 ? 'BNB' : 'ETH';
-
-  hd(`FinChip Market — ${fmtChain(chainId)}`);
+  hd(`FinChip Market — ${fmtChain(chain.id)}`);
   sep();
+
+  const proto  = await resolveProtocol(chain.id, cfg.rpc).catch(e => {
+    err(`Discovery failed: ${e.shortMessage || e.message}`); process.exit(1);
+  });
+  const client = getPublicClient(chain.id, cfg.rpc);
+
   inf('Fetching chip registry…');
-
-  const client = getPublicClient(chainId, cfg.rpc);
-
   let slugs;
   try {
     slugs = await client.readContract({
-      address: regAddr, abi: CHIP_REGISTRY_ABI, functionName: 'allSlugs',
+      address: proto.chipRegistry, abi: CHIP_REGISTRY_ABI, functionName: 'allSlugs',
     });
   } catch (e) {
     err(`Failed to fetch market: ${e.shortMessage || e.message?.split('\n')[0]}`);
@@ -39,41 +40,37 @@ export async function cmdMarketList(options) {
   console.log('');
 
   const toFetch = slugs.slice(0, limit);
+
+  // Resolve addresses in parallel
+  const addresses = await Promise.all(toFetch.map(slug =>
+    client.readContract({
+      address: proto.chipRegistry, abi: CHIP_REGISTRY_ABI,
+      functionName: 'resolve', args: [slug],
+    }).catch(() => null)
+  ));
+
+  // Fetch chip metadata in batches of 5
   const results = [];
-
-  // Batch resolve addresses
-  const addresses = await Promise.all(
-    toFetch.map(slug =>
-      client.readContract({ address: regAddr, abi: CHIP_REGISTRY_ABI, functionName: 'resolve', args: [slug] })
-        .catch(() => null)
-    )
-  );
-
-  // Fetch chip metadata in parallel (5 at a time)
   for (let i = 0; i < toFetch.length; i += 5) {
     const batch = toFetch.slice(i, i + 5);
     const addrs = addresses.slice(i, i + 5);
-
-    const batchResults = await Promise.all(
-      batch.map(async (slug, j) => {
-        const addr = addrs[j];
-        if (!addr || addr === '0x0000000000000000000000000000000000000000') return null;
-        try {
-          const [name, price, totalMinted, maxSupply, category] = await Promise.all([
-            client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'name' }).catch(() => slug),
-            client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'licensePrice' }).catch(() => 0n),
-            client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'totalMinted' }).catch(() => 0n),
-            client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'maxSupply' }).catch(() => 0n),
-            client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'category' }).catch(() => ''),
-          ]);
-          return { slug, addr, name, price, totalMinted, maxSupply, category };
-        } catch { return null; }
-      })
-    );
+    const batchResults = await Promise.all(batch.map(async (slug, j) => {
+      const addr = addrs[j];
+      if (!addr || addr === '0x0000000000000000000000000000000000000000') return null;
+      try {
+        const [name, price, totalMinted, maxSupply, category] = await Promise.all([
+          client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'name'         }).catch(() => slug),
+          client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'licensePrice' }).catch(() => 0n),
+          client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'totalMinted'  }).catch(() => 0n),
+          client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'maxSupply'    }).catch(() => 0n),
+          client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'category'     }).catch(() => ''),
+        ]);
+        return { slug, addr, name, price, totalMinted, maxSupply, category };
+      } catch { return null; }
+    }));
     results.push(...batchResults.filter(Boolean));
   }
 
-  // Filter by category if requested
   const filtered = filter
     ? results.filter(r => r.category.toLowerCase().includes(filter))
     : results;
@@ -83,8 +80,7 @@ export async function cmdMarketList(options) {
     return;
   }
 
-  // Print table
-  const colW = [32, 12, 12, 14];
+  const colW = [32, 14, 12, 14];
   const header = [
     'SLUG'.padEnd(colW[0]),
     'PRICE'.padEnd(colW[1]),
@@ -100,7 +96,7 @@ export async function cmdMarketList(options) {
       : `${chip.totalMinted}/∞`;
     const row = [
       `${c.cyan}${chip.slug.padEnd(colW[0])}${c.reset}`,
-      fmtWei(chip.price, symbol).padEnd(colW[1]),
+      fmtWei(chip.price, chain.id).padEnd(colW[1]),
       supply.padEnd(colW[2]),
       (chip.category || '—').padEnd(colW[3]),
     ].join('  ');
@@ -108,12 +104,11 @@ export async function cmdMarketList(options) {
   }
 
   console.log('');
-  inf(`Showing ${filtered.length} of ${slugs.length} chips · chain: ${fmtChain(chainId)}`);
+  inf(`Showing ${filtered.length} of ${slugs.length} chips · ${fmtChain(chain.id)}`);
   inf(`Acquire: finchip acquire --slug <slug>`);
   console.log('');
 }
 
 export async function cmdMarketSearch(options) {
-  // Alias: market search = market list with category filter
   await cmdMarketList({ ...options, limit: options.limit || '50' });
 }
