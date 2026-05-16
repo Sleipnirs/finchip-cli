@@ -1,23 +1,45 @@
-import { createPublicClient, createWalletClient, http, parseEther } from 'viem';
+// FinChip CLI v0.3.0 — viem client factory
+// Supports all 5 EVM mainnets with automatic RPC fallback.
+
+import { createPublicClient, createWalletClient, http, fallback, parseEther, formatEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { bsc, base } from 'viem/chains';
-import { RPCS } from './contracts.js';
+import { resolveChain, getRpcs } from './chains.js';
 
-const CHAINS = { 56: bsc, 8453: base };
+/**
+ * Build a transport — single http() if custom RPC given, otherwise
+ * fallback() across all configured public RPCs for the chain.
+ */
+function buildTransport(chainId, rpcOverride) {
+  if (rpcOverride) return http(rpcOverride);
+  const urls = getRpcs(chainId);
+  if (urls.length === 0) throw new Error(`No RPCs configured for chain ${chainId}`);
+  if (urls.length === 1) return http(urls[0]);
+  return fallback(urls.map(u => http(u)), { rank: false });
+}
 
+/** Public read-only client (no wallet) */
 export function getPublicClient(chainId, rpcOverride) {
-  const chain = CHAINS[chainId];
-  if (!chain) throw new Error(`Unsupported chain: ${chainId}. Use 56 (BSC) or 8453 (Base).`);
-  const transport = http(rpcOverride || RPCS[chainId]);
-  return createPublicClient({ chain, transport });
+  const chain = resolveChain(chainId);
+  return createPublicClient({
+    chain: chain.viemChain,
+    transport: buildTransport(chain.id, rpcOverride),
+  });
 }
 
+/** Wallet client + bound account from a 0x-prefixed private key */
 export function getWalletClient(chainId, privateKey, rpcOverride) {
-  const chain = CHAINS[chainId];
-  if (!chain) throw new Error(`Unsupported chain: ${chainId}. Use 56 (BSC) or 8453 (Base).`);
+  const chain = resolveChain(chainId);
+  if (!privateKey?.startsWith('0x') || privateKey.length !== 66) {
+    throw new Error('Invalid private key: must be 0x-prefixed 64-hex-char string');
+  }
   const account   = privateKeyToAccount(privateKey);
-  const transport = http(rpcOverride || RPCS[chainId]);
-  return { client: createWalletClient({ account, chain, transport }), account };
+  const transport = buildTransport(chain.id, rpcOverride);
+  const client    = createWalletClient({
+    account,
+    chain: chain.viemChain,
+    transport,
+  });
+  return { client, account };
 }
 
-export { parseEther, privateKeyToAccount };
+export { parseEther, formatEther, privateKeyToAccount };
