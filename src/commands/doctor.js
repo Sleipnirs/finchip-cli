@@ -110,23 +110,51 @@ export async function cmdDoctor(options) {
     const { body: card } = await fetchAgentCard();
     // agent-card.json declares registries in different shapes depending on version.
     // We try the most common locations.
-    const cardRegistries =
+    // Build a chainId → AgentRegistry-address map from the agent-card.
+    // Schema (matches finchip.ai/.well-known/agent-card.json):
+    //   on_chain_protocol.supported_chains[].{chain_id, agent_registry}
+    // Falls back to alternative shapes for resilience.
+    const cardRegistries = {};
+
+    // Path 1 (canonical FinChip schema): on_chain_protocol.supported_chains[]
+    const supportedChains =
+      card?.on_chain_protocol?.supported_chains ||
+      card?.onChainProtocol?.supportedChains    ||
+      [];
+    for (const entry of supportedChains) {
+      const cid  = entry.chain_id     ?? entry.chainId;
+      const addr = entry.agent_registry ?? entry.agentRegistry;
+      if (cid && addr) cardRegistries[cid] = addr;
+    }
+
+    // Path 2 (legacy / fallback): on_chain_protocol.registries or contracts
+    const legacyMap =
       card?.on_chain_protocol?.registries ||
       card?.onChainProtocol?.registries   ||
       card?.contracts                     ||
       null;
+    if (legacyMap && typeof legacyMap === 'object') {
+      for (const [k, v] of Object.entries(legacyMap)) {
+        const addr = (typeof v === 'string') ? v : (v?.AgentRegistry || v?.agentRegistry);
+        if (!addr) continue;
+        // Resolve k → chainId (could be "56", "bsc", or 56)
+        const id = (typeof k === 'string' && isNaN(parseInt(k)))
+          ? listChains().find(c => c.key === k.toLowerCase())?.id
+          : parseInt(k);
+        if (id) cardRegistries[id] = cardRegistries[id] || addr;
+      }
+    }
 
-    if (!cardRegistries) {
-      wrn(`Could not locate "registries" field in agent-card.json — drift check skipped`);
+    if (Object.keys(cardRegistries).length === 0) {
+      wrn(`agent-card.json contains no recognisable chain→AgentRegistry mapping — drift check skipped`);
     } else {
       let drift = 0;
+      let checked = 0;
       for (const ch of listChains()) {
-        const fromCard = (cardRegistries[ch.id]?.AgentRegistry ||
-                          cardRegistries[ch.key]?.AgentRegistry ||
-                          cardRegistries[String(ch.id)]?.AgentRegistry ||
-                          null)?.toLowerCase();
+        const fromCard  = cardRegistries[ch.id]?.toLowerCase();
         const fromChain = AGENT_REGISTRY[ch.id]?.toLowerCase();
         if (!fromCard) continue;
+        checked++;
         if (fromCard === fromChain) {
           ok(`${ch.short.padEnd(5)} AgentRegistry: in sync`);
         } else {
@@ -134,7 +162,11 @@ export async function cmdDoctor(options) {
           err(`${ch.short.padEnd(5)} DRIFT: card=${fmtAddr(fromCard)} chain=${fmtAddr(fromChain)}`);
         }
       }
-      if (drift === 0) ok('All declared addresses match hardcoded AgentRegistry table');
+      if (checked === 0) {
+        wrn(`agent-card.json had a map but no entries matched supported chains — drift check skipped`);
+      } else if (drift === 0) {
+        ok(`All ${checked} declared address(es) match hardcoded AgentRegistry table`);
+      }
     }
   } catch (e) {
     wrn(`Drift check skipped: ${e.message?.split('\n')[0]}`);
