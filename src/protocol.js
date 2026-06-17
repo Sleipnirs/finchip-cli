@@ -14,13 +14,15 @@
 
 // ── AgentRegistry addresses (V2.4 / V2.5 sticky) ─────────────────────────────
 // These ARE the only addresses the CLI hardcodes. Verified against on-chain
-// state on 2026-05-16.
+// state on 2026-05-16. Arb Sepolia added 2026-06-17.
 export const AGENT_REGISTRY = {
   56:    '0x649266FBF0b886369414393aD74F150d8a0f2A0f', // BSC
   8453:  '0x0E89f9d579a8449320F1E9De00Be72138C2F16D0', // Base
   1:     '0xbCd5B962b7a56129b0d2ACBF3765647736fA1FA1', // Ethereum
   42161: '0x98D112621AD92bd61B54c648D59fd505E1F400b5', // Arbitrum
   10:    '0x98D112621AD92bd61B54c648D59fd505E1F400b5', // Optimism (= Arb due to nonce parity)
+  // Internal testnet — fresh V2.5 bootstrap deploy (NOT sticky from V1):
+  421614: '0x0d8da793A9062D72D15bc9B34c532B40BB205e84', // Arbitrum Sepolia
 };
 
 // ── Permission bitmask (from AgentRegistry.sol constants) ────────────────────
