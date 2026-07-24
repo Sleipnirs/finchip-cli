@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { randomBytes } from 'crypto';
+import { spawnSync } from 'child_process';
 import { homedir } from 'os';
 import { dirname, join } from 'path';
 
@@ -17,9 +18,16 @@ const PERSISTED_COOKIES = new Set(['finchip_account_session', 'finchip_wallet_se
 const AUTH_COOKIE_PREFIX = 'finchip_';
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+
 export function normalizeApiOrigin(value = process.env.FINCHIP_API_URL || 'https://finchip.ai') {
   const url = new URL(value);
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('FINCHIP_API_URL must use http or https.');
+  // Session cookies are bearer credentials: never send them over plaintext HTTP
+  // except to a local test server.
+  if (url.protocol === 'http:' && !LOCALHOST_HOSTNAMES.has(url.hostname)) {
+    throw new Error('FINCHIP_API_URL must use HTTPS; HTTP is only allowed for localhost test servers.');
+  }
   return url.origin;
 }
 
@@ -39,15 +47,37 @@ export function readCredentialStore(path = credentialsPath()) {
   }
 }
 
+function restrictToOwnerWindows(target) {
+  // chmodSync is a no-op on Windows; tighten the ACL instead so only the
+  // current user can read the stored session credentials.
+  const user = process.env.USERNAME;
+  if (!user) return;
+  try {
+    spawnSync('icacls', [target, '/inheritance:r', '/grant:r', `${user}:(F)`], { stdio: 'ignore' });
+  } catch { /* Best effort on non-POSIX platforms. */ }
+}
+
+function restrictToOwner(target) {
+  if (process.platform === 'win32') {
+    restrictToOwnerWindows(target);
+  } else {
+    try { chmodSync(target, 0o600); } catch { /* Best effort on non-POSIX platforms. */ }
+  }
+}
+
 function writeCredentialStore(store, path) {
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  try { chmodSync(dir, 0o700); } catch { /* Best effort on non-POSIX platforms. */ }
+  if (process.platform === 'win32') {
+    restrictToOwnerWindows(dir);
+  } else {
+    try { chmodSync(dir, 0o700); } catch { /* Best effort on non-POSIX platforms. */ }
+  }
   const temp = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
   try {
     writeFileSync(temp, `${JSON.stringify(store, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
     renameSync(temp, path);
-    try { chmodSync(path, 0o600); } catch { /* Best effort on non-POSIX platforms. */ }
+    restrictToOwner(path);
   } finally {
     if (existsSync(temp)) rmSync(temp, { force: true });
   }

@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { loadOriginCredentials, saveOriginCredentials } from '../src/auth-client.js';
 
 const PRIVATE_KEY = `0x${'1'.padStart(64, '0')}`;
 const WALLET_ADDR = '0x7e5f4552091a69125d5dfcb7b8c2659029395bdf';
@@ -134,6 +135,62 @@ test('login, status, repeated login, and logout complete the cookie lifecycle', 
     const afterLogout = await runCli(['status', '--json'], env);
     assert.equal(afterLogout.code, 2);
     assert.equal(JSON.parse(afterLogout.stdout).code, 'AUTH_REQUIRED');
+  } finally {
+    await close(server);
+  }
+});
+
+test('logout clears local credentials even when remote revocation fails', async () => {
+  let logoutCalls = 0;
+  const server = createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/api/auth/session' && req.method === 'GET') {
+      res.end(JSON.stringify({
+        authenticated: true,
+        identity: { userId: 'user-1', username: 'agent_user' },
+        account: { userId: 'user-1' },
+        wallet: { walletAddr: WALLET_ADDR },
+        connections: { wallet: null, github: null },
+      }));
+      return;
+    }
+    if (req.url === '/api/auth/logout' && req.method === 'POST') {
+      logoutCalls += 1;
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: 'internal error' }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end(JSON.stringify({ error: 'not found' }));
+  });
+
+  const address = await listen(server);
+  const origin = `http://127.0.0.1:${address.port}`;
+  const dir = mkdtempSync(join(tmpdir(), 'finchip-logout-failure-'));
+  const credentialsPath = join(dir, 'credentials.json');
+  const env = {
+    FINCHIP_API_URL: origin,
+    FINCHIP_CREDENTIALS_PATH: credentialsPath,
+  };
+
+  try {
+    saveOriginCredentials(origin, {
+      finchip_account_session: { value: 'account-secret', expiresAt: null },
+    }, { path: credentialsPath });
+
+    const logout = await runCli(['logout', '--json'], env);
+    assert.equal(logout.code, 0, `${logout.stderr}\n${logout.stdout}`);
+    const result = JSON.parse(logout.stdout);
+    assert.equal(result.code, 'LOGGED_OUT');
+    assert.equal(result.remoteRevoked, false);
+    assert.equal(logoutCalls, 1);
+
+    // Local credentials must be gone even though the server returned 500.
+    assert.deepEqual(loadOriginCredentials(origin, { path: credentialsPath }), {});
+
+    const status = await runCli(['status', '--json'], env);
+    assert.equal(status.code, 2);
+    assert.equal(JSON.parse(status.stdout).code, 'AUTH_REQUIRED');
   } finally {
     await close(server);
   }

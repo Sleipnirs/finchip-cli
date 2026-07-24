@@ -1,7 +1,7 @@
 import { privateKeyToAccount } from 'viem/accounts';
 import { loadConfig, resolveConfiguredPrivateKey } from '../config.js';
 import { FinchipAuthClient, FinchipAuthError } from '../auth-client.js';
-import { emitFailure, emitResult, fmtAddr, hd, inf, ok, sep } from '../utils.js';
+import { emitFailure, emitResult, fmtAddr, hd, inf, ok, sep, wrn } from '../utils.js';
 
 function resolvePrivateKey() {
   const cfg = loadConfig();
@@ -152,16 +152,30 @@ export async function cmdLogout(options = {}) {
       emitResult(options, result, () => ok('No active FinChip session.'));
       return;
     }
-    const { response, payload } = await client.json('/api/auth/logout', {
-      method: 'POST',
-      persistCookies: false,
-    });
-    if (!response.ok) {
-      throw new FinchipAuthError('AUTH_NETWORK_ERROR', payload?.error || `Logout failed with status ${response.status}.`, response.status >= 500 ? 5 : 3);
+    // Best-effort remote revocation; local credentials are always cleared.
+    let remoteRevoked = true;
+    let remoteError = null;
+    try {
+      const { response, payload } = await client.json('/api/auth/logout', {
+        method: 'POST',
+        persistCookies: false,
+      });
+      if (!response.ok) {
+        remoteRevoked = false;
+        remoteError = payload?.error || `Logout failed with status ${response.status}.`;
+      }
+    } catch (error) {
+      remoteRevoked = false;
+      remoteError = error instanceof Error ? error.message : 'Unable to reach the FinChip API.';
     }
     client.clearCredentials();
-    const result = { ok: true, code: 'LOGGED_OUT', authenticated: false, origin: client.origin };
-    emitResult(options, result, () => ok(`Logged out from ${client.origin}.`));
+    const result = { ok: true, code: 'LOGGED_OUT', authenticated: false, origin: client.origin, remoteRevoked };
+    emitResult(options, result, () => {
+      ok(`Logged out from ${client.origin}.`);
+      if (!remoteRevoked) {
+        wrn(`Remote session revocation failed (${remoteError}). Local credentials were cleared; the server-side session may still be valid until it expires.`);
+      }
+    });
   } catch (error) {
     outputFailure(options, error);
   }
