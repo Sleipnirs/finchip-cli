@@ -33,6 +33,7 @@ import { cmdProtocolInfo }                                  from '../src/command
 import { cmdChains }                                        from '../src/commands/chains.js';
 import { cmdDoctor }                                        from '../src/commands/doctor.js';
 import { cmdPay }                                           from '../src/commands/pay.js';
+import { cmdLogin, cmdStatus, cmdLogout }                    from '../src/commands/auth.js';
 import { c }                                                from '../src/utils.js';
 
 const program = new Command();
@@ -66,6 +67,24 @@ program
   .option('--label <label>',     'Optional agent label')
   .option('--chain <chainId>',   'Chain ID or key')
   .action(cmdRegister);
+
+program
+  .command('login')
+  .description('Authenticate a FinChip account by signing with the configured wallet')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdLogin);
+
+program
+  .command('status')
+  .description('Show the active FinChip account session')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdStatus);
+
+program
+  .command('logout')
+  .description('Revoke and remove the active FinChip account session')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdLogout);
 
 // ── Operate · market ─────────────────────────────────────────────────────────
 const market = program.command('market').description('Browse the chip market');

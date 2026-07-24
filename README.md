@@ -73,6 +73,22 @@ finchip library                                  # see what you hold
 finchip pay https://finchip.ai/api/v1 --dry-run
 ```
 
+### Agent account login
+
+Authenticate the CLI with the same FinChip account used by the website. The CLI
+signs a short-lived wallet challenge locally and stores only the resulting
+session cookies in `~/.finchip/credentials.json` with owner-only permissions.
+
+```bash
+export FINCHIP_PRIVATE_KEY=0xYOUR_PRIVATE_KEY
+finchip login
+finchip status --json
+finchip logout
+```
+
+Credentials are isolated by `FINCHIP_API_URL`. Cookie values, signatures, and
+private keys are never included in command output.
+
 ---
 
 ## Commands
@@ -84,6 +100,9 @@ finchip pay https://finchip.ai/api/v1 --dry-run
 | `finchip init --key <fc_key>` | Save config, verify key on-chain |
 | `finchip verify` | Confirm registration + show protocol + V2.5 lock state |
 | `finchip register --perm full` | Write fc_key to AgentRegistry |
+| `finchip login [--json]` | Sign in to a FinChip account with the configured wallet |
+| `finchip status [--json]` | Verify and show the active account session |
+| `finchip logout [--json]` | Revoke and remove the active account session |
 
 ### Market & catalog
 
