@@ -25,7 +25,7 @@ import {
   sha256Hex,
   wrapFinchipV2ContentKey,
 } from '../publish-utils.js';
-import { CliError, emitFailure, emitResult, fmtAddr, fmtChain, hd, inf, ok, sep } from '../utils.js';
+import { CliError, emitFailure, emitResult, fmtAddr, fmtChain, hd, inf, ok, sep, wrn } from '../utils.js';
 
 const API_TIMEOUT_MS = 60_000;
 const TX_TIMEOUT_MS = 180_000;
@@ -306,6 +306,8 @@ async function finishPublish(state, context, contentKey) {
     ok: true, code: 'PUBLISH_COMPLETE', stage: 'market_ready', slug: state.slug,
     chainId: state.chainId, contractAddr: state.contractAddr, txHash: state.deployTxHash,
     setLitTxHash: state.setLitTxHash || null, skillId: state.skillId || null,
+    sourceFiles: state.sourceFiles || [],
+    excludedSensitiveFiles: state.excludedSensitiveFiles || [],
   };
 }
 
@@ -345,6 +347,13 @@ async function newPublish(pathArg, options, validated) {
   } catch (error) {
     throw new PublishError('SOURCE_UNSAFE', error instanceof Error ? error.message : 'Source validation failed.', 3, 'validation');
   }
+  if (source.excludedSensitivePaths.length && !options.json) {
+    const preview = source.excludedSensitivePaths.slice(0, 5).join(', ');
+    const remainder = source.excludedSensitivePaths.length > 5
+      ? `, +${source.excludedSensitivePaths.length - 5} more`
+      : '';
+    wrn(`Excluded sensitive files from the publish bundle: ${preview}${remainder}`);
+  }
   const primary = source.files[source.primaryIndex];
   const primaryBytes = readFileSync(primary.absolute);
   const bundleBytes = buildSourceBundle(source);
@@ -382,6 +391,8 @@ async function newPublish(pathArg, options, validated) {
     return {
       ok: true, code: 'PUBLISH_DRY_RUN', stage: 'validated', slug: validated.slug, chainId: chain.id,
       walletAddr: account.address.toLowerCase(), primary: primary.relative, fileCount: source.files.length,
+      sourceFiles: source.files.map(file => file.relative),
+      excludedSensitiveFiles: source.excludedSensitivePaths,
       primaryEncryptedBytes: encryptedPrimary.length, bundleEncryptedBytes: encryptedBundle?.length || 0,
       estimatedGas: gasEstimate.toString(), balance: formatEther(balance),
     };
@@ -444,6 +455,8 @@ async function newPublish(pathArg, options, validated) {
       deployTxHash, factoryAddr: proto.factory, contractAddr: null, registerBase, sealedContentKey: sealRecoverySecret(
         contentKey, privateKey, recoveryContext(client.origin, validated.slug, account.address),
       ),
+      sourceFiles: source.files.map(file => file.relative),
+      excludedSensitiveFiles: source.excludedSensitivePaths,
     };
     savePublishState(client.origin, validated.slug, state);
     await updateUploads(client, '/api/skills/me/ipfs/finalize', { uploadIds: uploaded, status: 'tx_submitted', txHash: deployTxHash });

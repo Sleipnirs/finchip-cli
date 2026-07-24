@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -10,6 +9,7 @@ import {
   readCredentialStore,
   saveOriginCredentials,
 } from '../src/auth-client.js';
+import { assertOwnerOnlyPermissions } from '../test-support/private-permissions.js';
 
 test('credentials are isolated by normalized API origin', () => {
   const dir = mkdtempSync(join(tmpdir(), 'finchip-credentials-'));
@@ -31,16 +31,8 @@ test('credentials file uses owner-only permissions and valid versioned JSON', ()
     finchip_wallet_session: { value: 'secret', expiresAt: null },
   }, { path });
 
-  if (process.platform === 'win32') {
-    // POSIX mode bits are not enforced on Windows; owner-only access is
-    // granted via ACL (icacls) instead. Assert the ACL was tightened.
-    const probe = spawnSync('icacls', [path], { encoding: 'utf8' });
-    assert.equal(probe.status, 0, probe.stderr);
-    assert.ok(probe.stdout.includes(`${process.env.USERNAME}:`), probe.stdout);
-  } else {
-    assert.equal(statSync(path).mode & 0o777, 0o600);
-    assert.equal(statSync(join(root, 'nested')).mode & 0o777, 0o700);
-  }
+  assertOwnerOnlyPermissions(path, 0o600);
+  assertOwnerOnlyPermissions(join(root, 'nested'), 0o700);
   assert.equal(readCredentialStore(path).version, 1);
   assert.doesNotThrow(() => JSON.parse(readFileSync(path, 'utf8')));
 });

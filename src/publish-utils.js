@@ -1,20 +1,16 @@
 import {
-  chmodSync,
   existsSync,
   lstatSync,
-  mkdirSync,
   readFileSync,
   realpathSync,
-  renameSync,
-  rmSync,
   statSync,
-  writeFileSync,
 } from 'fs';
 import { execFileSync } from 'child_process';
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from 'crypto';
 import { homedir } from 'os';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'path';
 import { zipSync } from 'fflate';
+import { writePrivateTextFile } from './private-files.js';
 
 export const DEFAULT_CHIP_LOGO_URI = 'ipfs://bafybeiaal47ha2ovfvttgiox4a6xzo4hes4kavjtpuhkrpagud5wjj7yl4';
 export const PRIMARY_MAX_ENCRYPTED_BYTES = 2 * 1024 * 1024;
@@ -25,9 +21,44 @@ export const MANIFEST_HASH_SCHEME = 'finchip-ipfs-content-manifest-v1';
 const STATE_VERSION = 1;
 const DEFAULT_STATE_PATH = join(homedir(), '.finchip', 'publish-state.json');
 const SOURCE_EXTENSIONS = new Set(['.py', '.ts', '.tsx', '.js', '.jsx', '.sol']);
-const SENSITIVE_PARTS = new Set(['.git', 'node_modules', '.finchip']);
-const SENSITIVE_NAMES = /^(?:\.env(?:\..*)?|credentials\.json|publish-state\.json|id_(?:rsa|dsa|ecdsa|ed25519)|.*private[-_]?key.*|keystore(?:[-_].*)?|wallet[-_](?:backup|key|secret).*)$/i;
-const SENSITIVE_EXTENSIONS = new Set(['.pem', '.key', '.p12', '.pfx', '.jks']);
+const SENSITIVE_PARTS = new Set([
+  '.git',
+  'node_modules',
+  '.finchip',
+  '.ssh',
+  '.gnupg',
+  '.aws',
+  '.azure',
+  '.kube',
+  '.terraform',
+]);
+const SENSITIVE_BASENAMES = new Set([
+  '.npmrc',
+  '.yarnrc',
+  '.yarnrc.yml',
+  '.pypirc',
+  '.netrc',
+  '_netrc',
+  '.git-credentials',
+  '.gitconfig',
+  '.htpasswd',
+  'auth.json',
+  'credentials',
+  'credentials.json',
+  'publish-state.json',
+  'application_default_credentials.json',
+  'credentials.db',
+  'cookies.txt',
+]);
+const SENSITIVE_NAMES = /^(?:\.env(?:\..*)?|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|.*private[-_]?key.*|keystore(?:[-_].*)?|wallet[-_](?:backup|key|secret).*|.*service[-_]?account.*\.json)$/i;
+const SENSITIVE_EXTENSIONS = new Set(['.pem', '.key', '.p12', '.pfx', '.jks', '.kdbx']);
+const SENSITIVE_PATH_PATTERNS = [
+  /(?:^|\/)\.docker\/config\.json$/i,
+  /(?:^|\/)\.config\/(?:gh|gcloud)\//i,
+  /(?:^|\/)[^/]+\.tfvars(?:\.json)?$/i,
+  /(?:^|\/)[^/]+\.tfstate(?:\.backup)?$/i,
+  /(?:^|\/)[^/]+\.kubeconfig$/i,
+];
 
 export function canonicalSlug(value) {
   const raw = String(value || '').trim().toLowerCase().replace(/_finchip$/, '');
@@ -38,9 +69,13 @@ export function canonicalSlug(value) {
 
 export function isSensitiveSourcePath(path) {
   const parts = path.split(/[\\/]+/).filter(Boolean);
-  return parts.some(part => SENSITIVE_PARTS.has(part))
+  const normalized = parts.join('/');
+  const basenameLower = parts.at(-1)?.toLowerCase() || '';
+  return parts.some(part => SENSITIVE_PARTS.has(part.toLowerCase()))
+    || SENSITIVE_BASENAMES.has(basenameLower)
     || parts.some(part => SENSITIVE_NAMES.test(part))
-    || SENSITIVE_EXTENSIONS.has(extname(path).toLowerCase());
+    || SENSITIVE_EXTENSIONS.has(extname(path).toLowerCase())
+    || SENSITIVE_PATH_PATTERNS.some(pattern => pattern.test(normalized));
 }
 
 function gitFiles(directory) {
@@ -59,10 +94,16 @@ function gitFiles(directory) {
     args,
     { encoding: 'buffer' },
   );
-  return output.toString('utf8').split('\0').filter(Boolean).map(file => ({
+  const candidates = output.toString('utf8').split('\0').filter(Boolean).map(file => ({
     absolute: join(root, file),
     relative: relative(normalizedDirectory, join(root, file)).split(sep).join('/'),
-  })).filter(file => !file.relative.startsWith('../') && !isSensitiveSourcePath(file.relative));
+  })).filter(file => !file.relative.startsWith('../'));
+  return {
+    files: candidates.filter(file => !isSensitiveSourcePath(file.relative)),
+    excludedSensitivePaths: candidates
+      .filter(file => isSensitiveSourcePath(file.relative))
+      .map(file => file.relative),
+  };
 }
 
 export function collectPublishSource(inputPath) {
@@ -71,13 +112,26 @@ export function collectPublishSource(inputPath) {
   const info = lstatSync(absolute);
   if (info.isFile()) {
     if (isSensitiveSourcePath(basename(absolute))) throw new Error('The selected source file looks like a credential or private key.');
-    return { root: dirname(absolute), files: [{ absolute, relative: basename(absolute) }], primaryIndex: 0, buildZip: false };
+    return {
+      root: dirname(absolute),
+      files: [{ absolute, relative: basename(absolute) }],
+      excludedSensitivePaths: [],
+      primaryIndex: 0,
+      buildZip: false,
+    };
   }
   if (!info.isDirectory()) throw new Error('Source must be a regular file or directory.');
-  const files = gitFiles(absolute).filter(file => lstatSync(file.absolute).isFile());
+  const collected = gitFiles(absolute);
+  const files = collected.files.filter(file => lstatSync(file.absolute).isFile());
   if (!files.length) throw new Error('No publishable files remain after Git ignore and sensitive-file filtering.');
   const primaryIndex = selectPrimaryIndex(files.map(file => file.relative));
-  return { root: absolute, files, primaryIndex, buildZip: files.length > 1 };
+  return {
+    root: absolute,
+    files,
+    excludedSensitivePaths: collected.excludedSensitivePaths,
+    primaryIndex,
+    buildZip: files.length > 1,
+  };
 }
 
 export function selectPrimaryIndex(paths) {
@@ -139,17 +193,7 @@ export function readPublishStateStore(path = statePath()) {
 }
 
 function writePublishStateStore(store, path) {
-  const dir = dirname(path);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  try { chmodSync(dir, 0o700); } catch { /* Best effort on non-POSIX platforms. */ }
-  const temp = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
-  try {
-    writeFileSync(temp, `${JSON.stringify(store, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-    renameSync(temp, path);
-    try { chmodSync(path, 0o600); } catch { /* Best effort on non-POSIX platforms. */ }
-  } finally {
-    if (existsSync(temp)) rmSync(temp, { force: true });
-  }
+  writePrivateTextFile(path, `${JSON.stringify(store, null, 2)}\n`);
 }
 
 export function savePublishState(origin, slug, state, options = {}) {
