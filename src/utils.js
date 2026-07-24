@@ -107,6 +107,37 @@ export function emit(result) {
   // In text mode, the caller already pretty-printed; this is a no-op.
 }
 
+export class CliError extends Error {
+  constructor(code, message, exitCode = 5, details = {}) {
+    super(message);
+    this.code = code;
+    this.exitCode = exitCode;
+    this.details = details;
+  }
+}
+
+export function emitResult(options, result, renderText) {
+  if (options?.json) process.stdout.write(`${JSON.stringify(result)}\n`);
+  else renderText();
+}
+
+export function emitFailure(options, error, defaults = {}) {
+  const normalized = error?.code && Number.isInteger(error?.exitCode)
+    ? error
+    : new CliError(
+        defaults.code || 'CLI_FAILED',
+        error instanceof Error ? error.message : defaults.message || 'Command failed.',
+      );
+  emitResult(options, {
+    ok: false,
+    ...(defaults.fields || {}),
+    code: normalized.code,
+    error: normalized.message,
+    ...(normalized.details || {}),
+  }, () => err(normalized.message));
+  process.exitCode = normalized.exitCode;
+}
+
 // Format duration in human-friendly form
 export function fmtAge(ms) {
   const s = Math.floor(ms / 1000);

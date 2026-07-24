@@ -89,6 +89,45 @@ finchip logout
 Credentials are isolated by `FINCHIP_API_URL`. Cookie values, signatures, and
 private keys are never included in command output.
 
+### Skill publishing and management
+
+`skill publish` uses the logged-in wallet session, FinChip-managed IPFS uploads, the
+ERC-1155 Factory, and the canonical `FINCHIP_V2` source encryption flow.
+
+```bash
+finchip skill publish ./my-skill \
+  --slug my-skill \
+  --name "My Skill" \
+  --description "Agent-ready skill description" \
+  --price 0.01 \
+  --chain bsc
+
+# Validate files, identity, chain state, balance, and gas without side effects
+finchip skill publish ./my-skill --slug my-skill --name "My Skill" \
+  --description "Agent-ready skill description" --price 0.01 --dry-run --json
+
+# Continue an interrupted post-deploy workflow without redeploying
+finchip skill publish --resume my-skill --json
+```
+
+Directory publishing requires a Git repository and follows `.gitignore` while
+also excluding common credential and private-key files. Interrupted publishes
+are stored in `~/.finchip/publish-state.json`; the content key is encrypted with
+a key derived from the publishing wallet private key.
+
+The legacy `finchip publish` entry remains available for existing scripts.
+
+```bash
+finchip skill get my-skill_finchip --chain bsc --addr 0x...
+
+finchip skill price set my-skill_finchip \
+  --chain bsc --addr 0x... --price 0.02
+
+# Retry catalog synchronization without sending a second price transaction
+finchip skill price sync my-skill_finchip \
+  --chain bsc --addr 0x... --tx-hash 0x...
+```
+
 ---
 
 ## Commands
@@ -103,6 +142,11 @@ private keys are never included in command output.
 | `finchip login [--json]` | Sign in to a FinChip account with the configured wallet |
 | `finchip status [--json]` | Verify and show the active account session |
 | `finchip logout [--json]` | Revoke and remove the active account session |
+| `finchip skill publish <path> [...]` | Publish an encrypted ERC-1155 Skill through the canonical flow |
+| `finchip skill publish --resume <slug>` | Resume an interrupted publish without redeploying |
+| `finchip skill get <slug>` | Read creator-only Skill management data |
+| `finchip skill price set <slug>` | Change the on-chain price and sync the catalog |
+| `finchip skill price sync <slug>` | Retry catalog sync for an existing price transaction |
 
 ### Market & catalog
 
