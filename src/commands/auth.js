@@ -1,13 +1,12 @@
 import { privateKeyToAccount } from 'viem/accounts';
-import { loadConfig } from '../config.js';
+import { loadConfig, resolveConfiguredPrivateKey } from '../config.js';
 import { FinchipAuthClient, FinchipAuthError } from '../auth-client.js';
-import { fmtAddr, hd, inf, ok, sep, err } from '../utils.js';
+import { emitFailure, emitResult, fmtAddr, hd, inf, ok, sep } from '../utils.js';
 
 function resolvePrivateKey() {
   const cfg = loadConfig();
-  const value = process.env.FINCHIP_PRIVATE_KEY || cfg.privateKey;
-  const privateKey = value?.startsWith('0x') ? value : value ? `0x${value}` : null;
-  if (!privateKey || !/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
+  const privateKey = resolveConfiguredPrivateKey(cfg);
+  if (!privateKey) {
     throw new FinchipAuthError(
       'AUTH_SIGNATURE_FAILED',
       'No valid private key found. Set FINCHIP_PRIVATE_KEY or configure privateKey.',
@@ -29,22 +28,11 @@ function accountSummary(session) {
   };
 }
 
-function output(options, result, renderText) {
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result)}\n`);
-  } else {
-    renderText();
-  }
-}
-
 function outputFailure(options, error) {
   const normalized = error instanceof FinchipAuthError
     ? error
     : new FinchipAuthError('AUTH_NETWORK_ERROR', error instanceof Error ? error.message : 'Authentication failed.');
-  const result = { ok: false, code: normalized.code, authenticated: false, error: normalized.message };
-  if (options.json) process.stdout.write(`${JSON.stringify(result)}\n`);
-  else err(normalized.message);
-  process.exitCode = normalized.exitCode;
+  emitFailure(options, normalized, { fields: { authenticated: false } });
 }
 
 export async function cmdLogin(options = {}) {
@@ -109,7 +97,7 @@ export async function cmdLogin(options = {}) {
     client.persistCredentials();
 
     const result = { ok: true, code: 'AUTHENTICATED', authenticated: true, origin: client.origin, account: accountSummary(session) };
-    output(options, result, () => {
+    emitResult(options, result, () => {
       hd('FinChip CLI — login');
       sep();
       ok('Authenticated with FinChip');
@@ -128,7 +116,7 @@ export async function cmdStatus(options = {}) {
     const client = new FinchipAuthClient();
     if (!client.hasPersistedCredentials()) {
       const result = { ok: false, code: 'AUTH_REQUIRED', authenticated: false, origin: client.origin, account: null };
-      output(options, result, () => inf(`Not authenticated with ${client.origin}. Run \`finchip login\`.`));
+      emitResult(options, result, () => inf(`Not authenticated with ${client.origin}. Run \`finchip login\`.`));
       process.exitCode = 2;
       return;
     }
@@ -136,12 +124,12 @@ export async function cmdStatus(options = {}) {
     if (!session.authenticated) {
       client.clearCredentials();
       const result = { ok: false, code: 'AUTH_REQUIRED', authenticated: false, origin: client.origin, account: null };
-      output(options, result, () => inf('FinChip session is expired or revoked. Run `finchip login`.'));
+      emitResult(options, result, () => inf('FinChip session is expired or revoked. Run `finchip login`.'));
       process.exitCode = 2;
       return;
     }
     const result = { ok: true, code: 'AUTHENTICATED', authenticated: true, origin: client.origin, account: accountSummary(session) };
-    output(options, result, () => {
+    emitResult(options, result, () => {
       hd('FinChip CLI — status');
       sep();
       ok('Authenticated');
@@ -161,7 +149,7 @@ export async function cmdLogout(options = {}) {
     const client = new FinchipAuthClient();
     if (!client.hasPersistedCredentials()) {
       const result = { ok: true, code: 'LOGGED_OUT', authenticated: false, origin: client.origin };
-      output(options, result, () => ok('No active FinChip session.'));
+      emitResult(options, result, () => ok('No active FinChip session.'));
       return;
     }
     const { response, payload } = await client.json('/api/auth/logout', {
@@ -173,7 +161,7 @@ export async function cmdLogout(options = {}) {
     }
     client.clearCredentials();
     const result = { ok: true, code: 'LOGGED_OUT', authenticated: false, origin: client.origin };
-    output(options, result, () => ok(`Logged out from ${client.origin}.`));
+    emitResult(options, result, () => ok(`Logged out from ${client.origin}.`));
   } catch (error) {
     outputFailure(options, error);
   }

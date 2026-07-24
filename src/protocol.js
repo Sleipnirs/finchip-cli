@@ -268,7 +268,7 @@ export const CHIP_ABI = [
   { type: 'function', name: 'setLitData', stateMutability: 'nonpayable',
     inputs: [
       { name: 'ciphertext',        type: 'string' },
-      { name: 'dataToEncryptHash', type: 'bytes32' },
+      { name: 'dataToEncryptHash', type: 'string' },
       { name: 'chain',             type: 'string' },
     ], outputs: [] },
 
@@ -326,7 +326,7 @@ export const CHIP_721_ABI = [
   { type: 'function', name: 'setLitData', stateMutability: 'nonpayable',
     inputs: [
       { name: 'ciphertext',        type: 'string' },
-      { name: 'dataToEncryptHash', type: 'bytes32' },
+      { name: 'dataToEncryptHash', type: 'string' },
       { name: 'chain',             type: 'string' },
     ], outputs: [] },
 

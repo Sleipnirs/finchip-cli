@@ -34,6 +34,7 @@ import { cmdChains }                                        from '../src/command
 import { cmdDoctor }                                        from '../src/commands/doctor.js';
 import { cmdPay }                                           from '../src/commands/pay.js';
 import { cmdLogin, cmdStatus, cmdLogout }                    from '../src/commands/auth.js';
+import { registerSkillCommands }                             from '../src/commands/skill.js';
 import { c }                                                from '../src/utils.js';
 
 const program = new Command();
@@ -142,6 +143,8 @@ program
   .option('--fork',                 'Shortcut for --standard ERC721')
   .option('--chain <chainId>',      'Chain ID or key', '56')
   .action(cmdPrepare);
+
+registerSkillCommands(program);
 
 // ── Operate · trade ──────────────────────────────────────────────────────────
 const trade = program.command('trade').description('Secondary market trading');

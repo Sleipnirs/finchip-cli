@@ -188,7 +188,7 @@ export class FinchipAuthClient {
     if (url.origin !== this.origin) {
       throw new FinchipAuthError('AUTH_NETWORK_ERROR', 'Authenticated requests must stay on the configured API origin.');
     }
-    const { persistCookies, ...fetchOptions } = options;
+    const { persistCookies, timeoutMs = this.timeoutMs, ...fetchOptions } = options;
     const method = (fetchOptions.method || 'GET').toUpperCase();
     const headers = new Headers(fetchOptions.headers || {});
     headers.set('Accept', headers.get('Accept') || 'application/json');
@@ -197,7 +197,7 @@ export class FinchipAuthClient {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) headers.set('Origin', this.origin);
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response;
     try {
       response = await this.fetchImpl(url, {
@@ -234,11 +234,35 @@ export class FinchipAuthClient {
     return payload;
   }
 
+  async requireSession(options = {}) {
+    const {
+      walletRequired = false,
+      missingMessage = 'Run `finchip login` first.',
+      expiredMessage = 'FinChip session is expired.',
+      details = {},
+    } = options;
+    if (!this.hasPersistedCredentials()) {
+      throw new FinchipAuthError('AUTH_REQUIRED', missingMessage, 2, details);
+    }
+    const session = await this.getSession();
+    if (!session.authenticated || (walletRequired && !session.wallet?.walletAddr)) {
+      this.clearCredentials();
+      throw new FinchipAuthError('AUTH_REQUIRED', expiredMessage, 2, details);
+    }
+    return session;
+  }
+
   async authenticatedFetch(path, options = {}) {
     const response = await this.request(path, options);
     if (response.status !== 401) return response;
     const session = await this.getSession();
     if (!session.authenticated) this.clearCredentials();
     return response;
+  }
+
+  async authenticatedJson(path, options = {}) {
+    const response = await this.authenticatedFetch(path, options);
+    const payload = await response.json().catch(() => ({}));
+    return { response, payload };
   }
 }
