@@ -8,7 +8,7 @@ import {
 import { execFileSync } from 'child_process';
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from 'crypto';
 import { homedir } from 'os';
-import { basename, dirname, extname, join, relative, resolve, sep } from 'path';
+import { basename, dirname, extname, join, resolve } from 'path';
 import { zipSync } from 'fflate';
 import { writePrivateTextFile } from './private-files.js';
 
@@ -79,25 +79,26 @@ export function isSensitiveSourcePath(path) {
 }
 
 function gitFiles(directory) {
-  let root;
+  let normalizedDirectory;
   try {
-    root = realpathSync(execFileSync('git', ['-C', directory, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim());
+    normalizedDirectory = realpathSync(directory);
+    execFileSync('git', ['-C', normalizedDirectory, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
   } catch {
     throw new Error('Directory publishing requires a Git repository. Publish a single file or a prepared ZIP instead.');
   }
-  const normalizedDirectory = realpathSync(directory);
-  const subdir = relative(root, normalizedDirectory).split(sep).join('/') || '.';
-  const args = ['-C', root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z'];
-  if (subdir !== '.') args.push('--', subdir);
+  const args = ['-C', normalizedDirectory, 'ls-files', '--cached', '--others', '--exclude-standard', '-z'];
   const output = execFileSync(
     'git',
     args,
     { encoding: 'buffer' },
   );
-  const candidates = output.toString('utf8').split('\0').filter(Boolean).map(file => ({
-    absolute: join(root, file),
-    relative: relative(normalizedDirectory, join(root, file)).split(sep).join('/'),
-  })).filter(file => !file.relative.startsWith('../'));
+  const candidates = output.toString('utf8').split('\0').filter(Boolean).map(file => {
+    const normalizedFile = file.split(/[\\/]+/).join('/');
+    return {
+      absolute: join(normalizedDirectory, normalizedFile),
+      relative: normalizedFile,
+    };
+  });
   return {
     files: candidates.filter(file => !isSensitiveSourcePath(file.relative)),
     excludedSensitivePaths: candidates
