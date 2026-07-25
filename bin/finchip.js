@@ -3,7 +3,7 @@
 //
 // Commands:
 //   Bootstrap    — init, verify, register
-//   Operate      — market, acquire, launch, prepare, trade, library
+//   Operate      — market, acquire, skill publish/manage, trade, library
 //   Configure    — config get/set/unset
 //   Inspect      — protocol, chains, doctor
 //   Commerce     — pay (x402 client)
@@ -24,8 +24,6 @@ import { cmdVerify }                                        from '../src/command
 import { cmdRegister }                                      from '../src/commands/register.js';
 import { cmdMarketList, cmdMarketSearch }                   from '../src/commands/market.js';
 import { cmdAcquire }                                       from '../src/commands/acquire.js';
-import { cmdLaunch }                                        from '../src/commands/launch.js';
-import { cmdPrepare }                                       from '../src/commands/prepare.js';
 import { cmdTradeList, cmdTradeBuy, cmdTradeSell, cmdTradeCancel } from '../src/commands/trade.js';
 import { cmdConfigGet, cmdConfigSet, cmdConfigUnset }       from '../src/commands/config.js';
 import { cmdLibrary }                                       from '../src/commands/library.js';
@@ -35,6 +33,7 @@ import { cmdDoctor }                                        from '../src/command
 import { cmdPay }                                           from '../src/commands/pay.js';
 import { cmdLogin, cmdStatus, cmdLogout }                    from '../src/commands/auth.js';
 import { registerSkillCommands }                             from '../src/commands/skill.js';
+import { registerDeprecatedPublishCommands }                 from '../src/commands/deprecated.js';
 import { c }                                                from '../src/utils.js';
 
 const program = new Command();
@@ -116,35 +115,8 @@ program
   .option('--force',               'Acquire even if already holding')
   .action(cmdAcquire);
 
-// ── Operate · launch ─────────────────────────────────────────────────────────
-program
-  .command('launch [path]')
-  .description('Deploy a new chip from chip.json manifest (ERC-1155 or ERC-721)')
-  .option('--chain <chainId>',  'Chain ID or key')
-  .option('--standard <std>',   'Override standard: ERC1155 (default) or ERC721')
-  .action(cmdLaunch);
-
-// ── Operate · prepare ────────────────────────────────────────────────────────
-program
-  .command('prepare <filepath>')
-  .description('Full pipeline: encrypt + IPFS + deploy + setLitData + register-chip')
-  .option('--name <name>',          'Skill name (default: filename)')
-  .option('--slug <slug>',          'Unique slug, must end with _finchip')
-  .option('--price <price>',        'Price (license or fork) in native currency', '0.01')
-  .option('--category <category>',  'Category (Finance, Code, Data…)', 'General')
-  .option('--description <desc>',   'Short description')
-  .option('--image-uri <uri>',      'IPFS URI for cover image')
-  .option('--max-supply <n>',       'ERC-1155: max licenses (0 = unlimited)', '0')
-  .option('--max-forks <n>',        'ERC-721: max forks (0 = unlimited)', '0')
-  .option('--royalty-bps <bps>',    'Royalty basis points (250 = 2.5%)', '250')
-  .option('--license-type <type>',  'License (MIT, Apache, Commercial)', 'MIT')
-  .option('--encrypt <mode>',       'Encryption: finchip | lit | agent', 'finchip')
-  .option('--standard <std>',       'ERC1155 (default) or ERC721')
-  .option('--fork',                 'Shortcut for --standard ERC721')
-  .option('--chain <chainId>',      'Chain ID or key', '56')
-  .action(cmdPrepare);
-
 registerSkillCommands(program);
+registerDeprecatedPublishCommands(program);
 
 // ── Operate · trade ──────────────────────────────────────────────────────────
 const trade = program.command('trade').description('Secondary market trading');
