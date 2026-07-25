@@ -111,9 +111,13 @@ finchip skill publish --resume my-skill --json
 ```
 
 Directory publishing requires a Git repository and follows `.gitignore` while
-also excluding common credential and private-key files. Interrupted publishes
-are stored in `~/.finchip/publish-state.json`; the content key is encrypted with
-a key derived from the publishing wallet private key.
+also excluding common credential and private-key files, including package
+manager tokens, cloud credentials, container/Kubernetes auth, and Terraform
+state or variable files. `--dry-run --json` reports both `sourceFiles` and
+`excludedSensitiveFiles` so an agent can audit the exact bundle before upload.
+Interrupted publishes are stored in `~/.finchip/publish-state.json` with the
+same owner-only permissions as login credentials; the content key is encrypted
+with a key derived from the publishing wallet private key.
 
 The legacy `finchip publish` entry remains available for existing scripts.
 
