@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from 'fs';
 import { basename, extname, resolve } from 'path';
-import { decodeEventLog, formatEther, parseEther } from 'viem';
+import { formatEther, parseEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { FinchipAuthClient } from '../auth-client.js';
 import { loadConfig, resolveConfiguredPrivateKey } from '../config.js';
@@ -8,6 +8,7 @@ import { getPublicClient, getWalletClient } from '../client.js';
 import { resolveProtocol } from '../discovery.js';
 import { resolveChain } from '../chains.js';
 import { FACTORY_ABI, CHIP_ABI } from '../protocol.js';
+import { resolveDeployedChip } from '../publish-recovery.js';
 import {
   BUNDLE_MAX_ENCRYPTED_BYTES,
   DEFAULT_CHIP_LOGO_URI,
@@ -31,8 +32,8 @@ const API_TIMEOUT_MS = 60_000;
 const TX_TIMEOUT_MS = 180_000;
 
 class PublishError extends CliError {
-  constructor(code, message, exitCode = 5, stage = null) {
-    super(code, message, exitCode, { stage });
+  constructor(code, message, exitCode = 5, stage = null, details = {}) {
+    super(code, message, exitCode, { stage, ...details });
   }
 }
 
@@ -154,17 +155,6 @@ async function updateUploads(client, path, body) {
   return payload;
 }
 
-function decodeChipAddress(receipt, factory) {
-  for (const log of receipt.logs) {
-    if (log.address?.toLowerCase() !== factory.toLowerCase()) continue;
-    try {
-      const decoded = decodeEventLog({ abi: FACTORY_ABI, eventName: 'ChipDeployedV2', data: log.data, topics: log.topics });
-      if (decoded.args?.chipContract) return decoded.args.chipContract;
-    } catch { /* Ignore unrelated factory logs. */ }
-  }
-  return null;
-}
-
 function recoveryContext(origin, slug, wallet) {
   return `${origin}:${slug}:${wallet.toLowerCase()}`;
 }
@@ -184,9 +174,29 @@ async function finishPublish(state, context, contentKey) {
       hash: state.deployTxHash, timeout: TX_TIMEOUT_MS, pollingInterval: 4_000,
     });
     if (receipt.status !== 'success') throw new PublishError('DEPLOY_FAILED', 'Deploy transaction reverted.', 5, 'deploy');
-    const contractAddr = decodeChipAddress(receipt, state.factoryAddr);
-    if (!contractAddr) throw new PublishError('DEPLOY_FAILED', 'Could not resolve the deployed Chip address.', 5, 'deploy');
-    state.contractAddr = contractAddr.toLowerCase();
+    const deployment = resolveDeployedChip({
+      receipt,
+      factory: state.factoryAddr,
+      creator: state.walletAddr,
+      slug: state.slug,
+    });
+    for (const warning of deployment.warnings) wrn(warning);
+    if (!deployment.contractAddr) {
+      throw new PublishError(
+        'DEPLOY_FAILED',
+        'Could not uniquely resolve the deployed Chip address from the confirmed Factory receipt.',
+        5,
+        'deploy',
+        {
+          txHash: state.deployTxHash,
+          slug: state.slug,
+          candidateCount: deployment.candidateCount,
+          resumable: true,
+          resumeSlug: state.slug,
+        },
+      );
+    }
+    state.contractAddr = deployment.contractAddr;
     state.registerPayload = { ...state.registerBase, contract_addr: state.contractAddr };
     save('deployed');
   }
