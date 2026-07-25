@@ -8,14 +8,14 @@ import {
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { dirname } from 'node:path';
+import { dirname, win32 } from 'node:path';
 
 const SYSTEM_SID = 'S-1-5-18';
 const securedDirectories = new Set();
 let cachedWindowsUserSid = null;
 
-function runWindowsCommand(command, args, description) {
-  const result = spawnSync(command, args, {
+function runWindowsCommand(command, args, description, spawn = spawnSync) {
+  const result = spawn(command, args, {
     encoding: 'utf8',
     windowsHide: true,
   });
@@ -26,16 +26,27 @@ function runWindowsCommand(command, args, description) {
   return result.stdout;
 }
 
-function currentWindowsUserSid() {
-  if (cachedWindowsUserSid) return cachedWindowsUserSid;
+export function resolveWindowsUserSid({
+  systemRoot = process.env.SystemRoot,
+  spawn = spawnSync,
+} = {}) {
+  // Do not resolve whoami through PATH: Git Bash/MSYS can select its Unix
+  // whoami, which rejects Windows /user arguments and makes ACL writes fail.
+  const whoamiPath = win32.join(systemRoot || 'C:\\Windows', 'System32', 'whoami.exe');
   const output = runWindowsCommand(
-    'whoami',
+    whoamiPath,
     ['/user', '/fo', 'csv', '/nh'],
     'Could not resolve the current Windows account',
+    spawn,
   );
   const match = output.match(/"(S-\d+(?:-\d+)+)"\s*$/im);
   if (!match) throw new Error('Could not parse the current Windows account SID.');
-  cachedWindowsUserSid = match[1];
+  return match[1];
+}
+
+function currentWindowsUserSid() {
+  if (cachedWindowsUserSid) return cachedWindowsUserSid;
+  cachedWindowsUserSid = resolveWindowsUserSid();
   return cachedWindowsUserSid;
 }
 

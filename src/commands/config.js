@@ -61,9 +61,13 @@ export function cmdConfigSet(key, value) {
 
   if (SENSITIVE_KEYS.has(key)) {
     ok(`${key} updated (stored in ${getConfigPath()})`);
-    console.log(`  ${c.yellow}⚠  For private keys, prefer env vars:${c.reset}`);
-    if (key === 'privateKey') console.log(`     export FINCHIP_PRIVATE_KEY=0x...`);
-    if (key === 'pinataJwt')  console.log(`     export PINATA_JWT=...`);
+    if (key === 'privateKey') {
+      console.log(`  ${c.yellow}⚠  For private keys, prefer env vars:${c.reset}`);
+      console.log(`     export FINCHIP_PRIVATE_KEY=0x...`);
+    }
+    if (key === 'pinataJwt') {
+      console.log(`  ${c.yellow}⚠  pinataJwt is a masked legacy key; skill publish no longer reads it.${c.reset}`);
+    }
   } else {
     ok(`${key}: ${prev ?? '(not set)'} → ${cfg[key]}`);
   }

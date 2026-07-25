@@ -40,6 +40,8 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   assert.equal(publishHelp.code, 0, publishHelp.stderr);
   assert.match(publishHelp.stdout, /--resume <slug>/);
   assert.match(publishHelp.stdout, /--dry-run/);
+  assert.match(publishHelp.stdout, /--encrypt <mode>/);
+  assert.match(publishHelp.stdout, /raw CK.*Site.*Lit\/Chipotle/i);
 
   const legacyHelp = await runCli(['publish', '--help'], {});
   assert.equal(legacyHelp.code, 0, legacyHelp.stderr);
@@ -50,9 +52,12 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   const publishArgs = ['package.json', '--slug', 'demo', '--name', 'Demo', '--description', 'Test', '--price', '0.01', '--json'];
   const primary = await runCli(['skill', 'publish', ...publishArgs], env);
   const legacy = await runCli(['publish', ...publishArgs], env);
-  assert.equal(primary.code, 2, `${primary.stderr}\n${primary.stdout}`);
-  assert.equal(legacy.code, 2, `${legacy.stderr}\n${legacy.stdout}`);
+  assert.equal(primary.code, 3, `${primary.stderr}\n${primary.stdout}`);
+  assert.equal(legacy.code, 3, `${legacy.stderr}\n${legacy.stdout}`);
   assert.deepEqual(JSON.parse(primary.stdout), JSON.parse(legacy.stdout));
+  assert.equal(JSON.parse(primary.stdout).code, 'PUBLISH_INVALID');
+  assert.match(JSON.parse(primary.stdout).error, /category is required/i);
+  assert.equal(JSON.parse(primary.stdout).encryptionMode, 'finchip');
 });
 
 test('skill get and price sync use creator manage endpoints with stable JSON', async () => {

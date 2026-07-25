@@ -16,8 +16,7 @@ const DEFAULTS = {
   rpc:        null,                  // custom RPC override (optional)
   privateKey: null,                  // ⚠ env var preferred
   label:      null,                  // default label for register
-  // Operational hints:
-  pinataJwt:  null,                  // for `finchip prepare` IPFS uploads
+  pinataJwt:  null,                  // legacy key; retained so old secrets remain masked
 };
 
 export function loadConfig() {
@@ -60,11 +59,6 @@ export function resolveConfiguredPrivateKey(cfg = loadConfig()) {
 function configuredPrivateKey(cfg) {
   const value = process.env.FINCHIP_PRIVATE_KEY || cfg.privateKey;
   return value?.startsWith('0x') ? value : value ? `0x${value}` : null;
-}
-
-// ── Pinata JWT resolution ───────────────────────────────────────────────────
-export function getPinataJwt(cfg) {
-  return process.env.PINATA_JWT || cfg.pinataJwt || null;
 }
 
 // ── fc_key format conversion ─────────────────────────────────────────────────

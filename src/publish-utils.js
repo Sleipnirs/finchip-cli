@@ -257,3 +257,14 @@ export function wrapFinchipV2ContentKey(serverKey, contentKey) {
   const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]);
   return Buffer.concat([iv, encrypted]).toString('base64');
 }
+
+export function wrapOracleV2ContentKey(serverKey, contentKey) {
+  const key = Buffer.from(String(serverKey).replace(/^0x/, ''), 'hex');
+  const plaintext = Buffer.from(contentKey);
+  if (key.length !== 32) throw new Error('FinChip key service returned an invalid Oracle V2 key.');
+  if (plaintext.length !== 32) throw new Error('Oracle V2 requires a raw 32-byte content key.');
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]);
+  return Buffer.concat([iv, encrypted]).toString('base64');
+}
