@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { FACTORY_ABI } from '../src/protocol.js';
+import { CHIP_ABI, FACTORY_ABI } from '../src/protocol.js';
 
 function entry(type, name) {
   const item = FACTORY_ABI.find(candidate => candidate.type === type && candidate.name === name);
@@ -24,4 +24,10 @@ test('Factory ABI matches the production deploy functions and events', () => {
     entry('event', 'ChipDeployedV2_721').inputs.map(input => input.type),
     ['address', 'address', 'string', 'uint8', 'uint256'],
   );
+});
+
+test('Chip ABI reads the complete on-chain encryption tuple', () => {
+  const getLitData = CHIP_ABI.find(item => item.type === 'function' && item.name === 'getLitData');
+  assert.ok(getLitData);
+  assert.deepEqual(getLitData.outputs.map(output => output.type), ['string', 'string', 'string']);
 });

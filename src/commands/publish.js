@@ -24,8 +24,16 @@ import {
   savePublishState,
   sealRecoverySecret,
   sha256Hex,
-  wrapFinchipV2ContentKey,
 } from '../publish-utils.js';
+import {
+  ENCRYPTION_MODES,
+  assertEncryptionModeSupported,
+  normalizeEncryptionMode,
+  normalizeResumeEncryptionState,
+  prepareEncryptionEnvelope,
+  resumeNeedsContentKey,
+  verifyEncryptionTuple,
+} from '../publish-encryption.js';
 import { CliError, emitFailure, emitResult, fmtAddr, fmtChain, hd, inf, ok, sep, wrn } from '../utils.js';
 
 const API_TIMEOUT_MS = 60_000;
@@ -41,7 +49,9 @@ function fail(options, error) {
   const normalized = error?.code && Number.isInteger(error?.exitCode)
     ? error
     : new PublishError('PUBLISH_FAILED', error instanceof Error ? error.message : 'Publish failed.');
-  emitFailure(options, normalized, { fields: { stage: null } });
+  emitFailure(options, normalized, {
+    fields: { stage: null, encryptionMode: String(options.encrypt || 'finchip').toLowerCase() },
+  });
 }
 
 function validateOptions(pathArg, options) {
@@ -73,7 +83,8 @@ function validateOptions(pathArg, options) {
   if (!Number.isSafeInteger(maxSupply) || maxSupply < 0) {
     throw new PublishError('PUBLISH_INVALID', 'max-supply must be a non-negative safe integer.', 3, 'validation');
   }
-  return { slug, priceWei, royaltyBps, maxSupply };
+  const encryptionMode = normalizeEncryptionMode(options.encrypt);
+  return { slug, priceWei, royaltyBps, maxSupply, encryptionMode };
 }
 
 function resolveCoverOption(cover) {
@@ -159,6 +170,68 @@ function recoveryContext(origin, slug, wallet) {
   return `${origin}:${slug}:${wallet.toLowerCase()}`;
 }
 
+const PUBLISH_STAGE_ORDER = Object.freeze({
+  broadcast: 0,
+  deployed: 1,
+  attached: 2,
+  registered: 3,
+  key_prepared: 4,
+  key_submitted: 5,
+  key_set: 6,
+});
+
+function stageAtLeast(stage, expected) {
+  return (PUBLISH_STAGE_ORDER[stage] ?? -1) >= PUBLISH_STAGE_ORDER[expected];
+}
+
+function enrichPublishError(error, state) {
+  if (!state?.deployTxHash) return error;
+  const normalized = error?.code && Number.isInteger(error?.exitCode)
+    ? error
+    : new PublishError('PUBLISH_RESUME_REQUIRED', error instanceof Error ? error.message : 'Publish failed.', 5, state.stage);
+  return new PublishError(
+    normalized.code,
+    normalized.message,
+    normalized.exitCode,
+    normalized.details?.stage || state.stage,
+    {
+      ...(normalized.details || {}),
+      encryptionMode: state.mode || 'finchip',
+      resumable: true,
+      resumeSlug: state.slug,
+      txHash: normalized.details?.txHash || state.setLitTxHash || state.deployTxHash,
+      deployTxHash: state.deployTxHash,
+      ...(state.setLitTxHash ? { setLitTxHash: state.setLitTxHash } : {}),
+    },
+  );
+}
+
+async function verifySavedEncryption(publicClient, state) {
+  let tuple;
+  try {
+    tuple = await publicClient.readContract({
+      address: state.contractAddr,
+      abi: CHIP_ABI,
+      functionName: 'getLitData',
+    });
+  } catch (error) {
+    throw new PublishError(
+      'KEY_SETUP_FAILED',
+      `Could not read the saved encryption envelope on-chain. (${error.shortMessage || error.message || 'RPC unavailable'})`,
+      5,
+      'key_setup',
+      { encryptionMode: state.mode },
+    );
+  }
+  const expected = state.preparedKeyData || {
+    mode: state.mode,
+    marker: state.marker,
+    chainTag: state.diagnosticChainTag,
+  };
+  const verification = verifyEncryptionTuple(expected, tuple);
+  for (const warning of verification.warnings) wrn(warning);
+}
+
 async function finishPublish(state, context, contentKey) {
   const { client, privateKey, account, cfg } = context;
   const chain = resolveChain(state.chainId);
@@ -169,162 +242,180 @@ async function finishPublish(state, context, contentKey) {
     savePublishState(client.origin, state.slug, state);
   };
 
-  if (state.stage === 'broadcast') {
-    const receipt = await publicClient.waitForTransactionReceipt({
-      hash: state.deployTxHash, timeout: TX_TIMEOUT_MS, pollingInterval: 4_000,
-    });
-    if (receipt.status !== 'success') throw new PublishError('DEPLOY_FAILED', 'Deploy transaction reverted.', 5, 'deploy');
-    const deployment = resolveDeployedChip({
-      receipt,
-      factory: state.factoryAddr,
-      creator: state.walletAddr,
-      slug: state.slug,
-    });
-    for (const warning of deployment.warnings) wrn(warning);
-    if (!deployment.contractAddr) {
-      throw new PublishError(
-        'DEPLOY_FAILED',
-        'Could not uniquely resolve the deployed Chip address from the confirmed Factory receipt.',
-        5,
-        'deploy',
-        {
-          txHash: state.deployTxHash,
-          slug: state.slug,
-          candidateCount: deployment.candidateCount,
-          resumable: true,
-          resumeSlug: state.slug,
-        },
-      );
+  try {
+    if (state.stage === 'broadcast') {
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: state.deployTxHash, timeout: TX_TIMEOUT_MS, pollingInterval: 4_000,
+      });
+      if (receipt.status !== 'success') throw new PublishError('DEPLOY_FAILED', 'Deploy transaction reverted.', 5, 'deploy');
+      const deployment = resolveDeployedChip({
+        receipt,
+        factory: state.factoryAddr,
+        creator: state.walletAddr,
+        slug: state.slug,
+      });
+      for (const warning of deployment.warnings) wrn(warning);
+      if (!deployment.contractAddr) {
+        throw new PublishError(
+          'DEPLOY_FAILED',
+          'Could not uniquely resolve the deployed Chip address from the confirmed Factory receipt.',
+          5,
+          'deploy',
+          {
+            txHash: state.deployTxHash,
+            slug: state.slug,
+            candidateCount: deployment.candidateCount,
+          },
+        );
+      }
+      state.contractAddr = deployment.contractAddr;
+      state.registerPayload = { ...state.registerBase, contract_addr: state.contractAddr };
+      save('deployed');
     }
-    state.contractAddr = deployment.contractAddr;
-    state.registerPayload = { ...state.registerBase, contract_addr: state.contractAddr };
-    save('deployed');
-  }
 
-  if (state.stage === 'deployed') {
-    await updateUploads(client, '/api/skills/me/ipfs/finalize', {
-      uploadIds: state.uploadIds, status: 'attached', txHash: state.deployTxHash,
-    });
-    save('attached');
-  }
-
-  if (!['registered', 'key_set'].includes(state.stage)) {
-    const { response, payload } = await apiJson(client, '/api/chips/register', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.registerPayload),
-    });
-    if (!response.ok || payload.ok !== true) {
-      throw new PublishError('REGISTER_FAILED', payload.error || payload.code || 'Catalog registration failed.', 5, 'register');
+    if (state.stage === 'deployed') {
+      await updateUploads(client, '/api/skills/me/ipfs/finalize', {
+        uploadIds: state.uploadIds, status: 'attached', txHash: state.deployTxHash,
+      });
+      save('attached');
     }
-    state.skillId = payload.skill_id || state.skillId || null;
-    save('registered');
-  }
 
-  if (state.stage !== 'key_set') {
-    if (state.setLitTxHash) {
+    if (!stageAtLeast(state.stage, 'registered')) {
+      const { response, payload } = await apiJson(client, '/api/chips/register', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.registerPayload),
+      });
+      if (!response.ok || payload.ok !== true) {
+        throw new PublishError('REGISTER_FAILED', payload.error || payload.code || 'Catalog registration failed.', 5, 'register');
+      }
+      state.skillId = payload.skill_id || state.skillId || null;
+      save('registered');
+    }
+
+    if (state.setLitTxHash && !stageAtLeast(state.stage, 'key_submitted')) {
+      state.preparedKeyData ||= {
+        mode: state.mode,
+        marker: state.marker,
+        chainTag: state.diagnosticChainTag,
+      };
+      save('key_submitted');
+    }
+
+    if (state.stage === 'registered') {
+      const prepared = await prepareEncryptionEnvelope({
+        mode: state.mode,
+        contentKey,
+        chain,
+        contractAddr: state.contractAddr,
+        walletAddr: account.address,
+        signMessage: message => account.signMessage({ message }),
+        request: (path, options) => apiJson(client, path, options),
+      });
+      state.preparedKeyData = {
+        ciphertext: prepared.ciphertext,
+        marker: prepared.marker,
+        chainTag: prepared.chainTag,
+        mode: prepared.mode,
+      };
+      state.contentKeyFormat = prepared.contentKeyFormat;
+      state.envelopeScheme = prepared.envelopeScheme;
+      state.marker = prepared.marker;
+      state.diagnosticChainTag = prepared.chainTag;
+      save('key_prepared');
+    }
+
+    if (state.stage === 'key_prepared') {
       try {
-        const receipt = await publicClient.waitForTransactionReceipt({
+        state.setLitTxHash = await walletClient.writeContract({
+          address: state.contractAddr,
+          abi: CHIP_ABI,
+          functionName: 'setLitData',
+          args: [
+            state.preparedKeyData.ciphertext,
+            state.preparedKeyData.marker,
+            state.preparedKeyData.chainTag,
+          ],
+        });
+        save('key_submitted');
+      } catch (error) {
+        throw new PublishError(
+          'KEY_SETUP_FAILED',
+          error.shortMessage || error.message || 'setLitData transaction could not be submitted.',
+          5,
+          'key_setup',
+          { encryptionMode: state.mode },
+        );
+      }
+    }
+
+    if (state.stage === 'key_submitted') {
+      let receipt;
+      try {
+        receipt = await publicClient.waitForTransactionReceipt({
           hash: state.setLitTxHash, timeout: TX_TIMEOUT_MS, pollingInterval: 4_000,
         });
-        if (receipt.status === 'success') {
-          const visible = await publicClient.readContract({
-            address: state.contractAddr, abi: CHIP_ABI, functionName: 'litDataSet',
-          });
-          if (!visible) {
-            throw new PublishError('KEY_SETUP_FAILED', 'setLitData succeeded but is not visible on-chain yet.', 5, 'key_setup');
-          }
-          delete state.sealedContentKey;
-          save('key_set');
-        } else {
-          delete state.setLitTxHash;
-          savePublishState(client.origin, state.slug, state);
-        }
       } catch (error) {
         const visible = await publicClient.readContract({
           address: state.contractAddr, abi: CHIP_ABI, functionName: 'litDataSet',
         }).catch(() => false);
-        if (visible) {
-          delete state.sealedContentKey;
-          save('key_set');
-        } else {
-          throw error instanceof PublishError
-            ? error
-            : new PublishError(
-                'KEY_SETUP_FAILED',
-                `The saved setLitData transaction is still pending or unavailable. Resume again with the same slug. (${error instanceof Error ? error.message : 'RPC unavailable'})`,
-                5,
-                'key_setup',
-              );
+        if (!visible) {
+          throw new PublishError(
+            'KEY_SETUP_FAILED',
+            `The saved setLitData transaction is pending or unavailable. (${error.shortMessage || error.message || 'RPC unavailable'})`,
+            5,
+            'key_setup',
+            { encryptionMode: state.mode },
+          );
         }
       }
+      if (receipt && receipt.status !== 'success') {
+        delete state.setLitTxHash;
+        save('key_prepared');
+        throw new PublishError(
+          'KEY_SETUP_FAILED',
+          'setLitData transaction reverted; the prepared envelope was retained for retry.',
+          5,
+          'key_setup',
+          { encryptionMode: state.mode },
+        );
+      }
+      await verifySavedEncryption(publicClient, state);
+      delete state.sealedContentKey;
+      save('key_set');
     }
-  }
 
-  if (state.stage !== 'key_set') {
-    const message = `FinChip key request\nchip: ${state.contractAddr}\nwallet: ${account.address.toLowerCase()}\nnonce: ${Date.now()}`;
-    const signature = await account.signMessage({ message });
-    const { response, payload } = await apiJson(client, '/api/get-key', {
+    const { response, payload } = await apiJson(client, '/api/chips/finalize-encrypted-source', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contract_addr: state.contractAddr, chain_id: state.chainId, slug: state.slug }),
+    });
+    if (!response.ok || payload.ok !== true || payload.market_eligible !== true) {
+      throw new PublishError('FINALIZE_FAILED', payload.error || payload.code || 'Market finalize failed.', 5, 'finalize');
+    }
+    await apiJson(client, '/api/points', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chipAddress: state.contractAddr,
-        chainId: state.chainId,
-        walletAddress: account.address.toLowerCase(),
-        signature,
-        message,
+        wallet_addr: account.address.toLowerCase(), action: 'launch',
+        chain_id: state.chainId, tx_hash: state.deployTxHash,
       }),
-    });
-    if (!response.ok || !payload.serverKey) {
-      throw new PublishError('KEY_SETUP_FAILED', payload.error || 'FinChip key service failed.', 5, 'key_setup');
-    }
-    const ciphertext = wrapFinchipV2ContentKey(payload.serverKey, contentKey);
-    let setLitHash;
-    try {
-      setLitHash = await walletClient.writeContract({
-        address: state.contractAddr,
-        abi: CHIP_ABI,
-        functionName: 'setLitData',
-        args: [ciphertext, 'FINCHIP_V2', chain.key],
-      });
-      state.setLitTxHash = setLitHash;
-      savePublishState(client.origin, state.slug, state);
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: setLitHash, timeout: TX_TIMEOUT_MS, pollingInterval: 4_000 });
-      if (receipt.status !== 'success') throw new Error('setLitData reverted.');
-      const visible = await publicClient.readContract({ address: state.contractAddr, abi: CHIP_ABI, functionName: 'litDataSet' });
-      if (!visible) throw new Error('setLitData is not visible on-chain.');
-    } catch (error) {
-      throw new PublishError('KEY_SETUP_FAILED', error instanceof Error ? error.message : 'setLitData failed.', 5, 'key_setup');
-    }
-    delete state.sealedContentKey;
-    save('key_set');
+    }).catch(() => null);
+    clearPublishState(client.origin, state.slug);
+    return {
+      ok: true, code: 'PUBLISH_COMPLETE', stage: 'market_ready', slug: state.slug,
+      chainId: state.chainId, contractAddr: state.contractAddr, txHash: state.deployTxHash,
+      setLitTxHash: state.setLitTxHash || null, skillId: state.skillId || null,
+      encryptionMode: state.mode,
+      sourceFiles: state.sourceFiles || [],
+      excludedSensitiveFiles: state.excludedSensitiveFiles || [],
+    };
+  } catch (error) {
+    throw enrichPublishError(error, state);
   }
-
-  const { response, payload } = await apiJson(client, '/api/chips/finalize-encrypted-source', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contract_addr: state.contractAddr, chain_id: state.chainId, slug: state.slug }),
-  });
-  if (!response.ok || payload.ok !== true || payload.market_eligible !== true) {
-    throw new PublishError('FINALIZE_FAILED', payload.error || payload.code || 'Market finalize failed.', 5, 'finalize');
-  }
-  await apiJson(client, '/api/points', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      wallet_addr: account.address.toLowerCase(), action: 'launch',
-      chain_id: state.chainId, tx_hash: state.deployTxHash,
-    }),
-  }).catch(() => null);
-  clearPublishState(client.origin, state.slug);
-  return {
-    ok: true, code: 'PUBLISH_COMPLETE', stage: 'market_ready', slug: state.slug,
-    chainId: state.chainId, contractAddr: state.contractAddr, txHash: state.deployTxHash,
-    setLitTxHash: state.setLitTxHash || null, skillId: state.skillId || null,
-    sourceFiles: state.sourceFiles || [],
-    excludedSensitiveFiles: state.excludedSensitiveFiles || [],
-  };
 }
 
 async function resumePublish(slug, options) {
   const probe = new FinchipAuthClient();
   const state = loadPublishState(probe.origin, slug);
   if (!state) throw new PublishError('PUBLISH_RESUME_REQUIRED', `No saved publish state exists for ${slug}.`, 3, 'resume');
+  normalizeResumeEncryptionState(state, options.encrypt, resolveChain(state.chainId));
   const context = await authenticatedContext(state.walletAddr);
   if (state.origin !== context.client.origin || state.slug !== slug) {
     throw new PublishError('PUBLISH_RESUME_REQUIRED', 'Publish state does not match the current API origin or slug.', 3, 'resume');
@@ -336,13 +427,13 @@ async function resumePublish(slug, options) {
   if (!state.factoryAddr || protocol.factory.toLowerCase() !== state.factoryAddr.toLowerCase()) {
     throw new PublishError('PUBLISH_RESUME_REQUIRED', 'Publish state does not match the current Factory deployment.', 3, 'resume');
   }
-  const contentKey = state.stage === 'key_set'
-    ? null
-    : openRecoverySecret(
+  const contentKey = resumeNeedsContentKey(state)
+    ? openRecoverySecret(
         state.sealedContentKey,
         context.privateKey,
         recoveryContext(context.client.origin, slug, state.walletAddr),
-      );
+      )
+    : null;
   return finishPublish(state, context, contentKey);
 }
 
@@ -350,6 +441,10 @@ async function newPublish(pathArg, options, validated) {
   const context = await authenticatedContext();
   const { client, cfg, privateKey, account } = context;
   const chain = resolveChain(options.chain || cfg.chain);
+  assertEncryptionModeSupported(validated.encryptionMode, chain);
+  if (validated.encryptionMode === 'lit' && !options.json) {
+    wrn('Lit mode sends the raw content key (Base64-encoded) to the FinChip Site, which forwards it to Lit/Chipotle to create the envelope.');
+  }
   const cover = resolveCoverOption(options.cover);
   let source;
   try {
@@ -400,6 +495,7 @@ async function newPublish(pathArg, options, validated) {
   if (options.dryRun) {
     return {
       ok: true, code: 'PUBLISH_DRY_RUN', stage: 'validated', slug: validated.slug, chainId: chain.id,
+      encryptionMode: validated.encryptionMode,
       walletAddr: account.address.toLowerCase(), primary: primary.relative, fileCount: source.files.length,
       sourceFiles: source.files.map(file => file.relative),
       excludedSensitiveFiles: source.excludedSensitivePaths,
@@ -455,12 +551,17 @@ async function newPublish(pathArg, options, validated) {
       name: options.name.trim(), slug: validated.slug, creator_addr: account.address.toLowerCase(), category: options.category,
       tags: String(options.tags || '').split(',').map(tag => tag.trim()).filter(Boolean), license: options.license,
       description: options.description.trim(), version: options.version, source_url: manifestPin.uri,
-      source_filename: primary.relative, encrypt_mode: 'finchip', market_eligible: false, metadata_uri: metadataPin.uri,
+      source_filename: primary.relative, encrypt_mode: validated.encryptionMode, market_eligible: false, metadata_uri: metadataPin.uri,
       token_type: 'erc1155', price_wei: validated.priceWei.toString(), royalty_bps: validated.royaltyBps,
       max_supply: validated.maxSupply, fee_model: 0,
     };
     const state = {
-      version: 1, origin: client.origin, slug: validated.slug, stage: 'broadcast', walletAddr: account.address.toLowerCase(),
+      version: 2, origin: client.origin, slug: validated.slug, stage: 'broadcast', walletAddr: account.address.toLowerCase(),
+      mode: validated.encryptionMode,
+      contentKeyFormat: 'raw-32-v1',
+      envelopeScheme: ENCRYPTION_MODES[validated.encryptionMode].envelopeScheme,
+      marker: ENCRYPTION_MODES[validated.encryptionMode].marker,
+      diagnosticChainTag: chain.key,
       chainId: chain.id, uploadIds: uploaded, metadataUri: metadataPin.uri, sourceUri: manifestPin.uri,
       deployTxHash, factoryAddr: proto.factory, contractAddr: null, registerBase, sealedContentKey: sealRecoverySecret(
         contentKey, privateKey, recoveryContext(client.origin, validated.slug, account.address),
@@ -493,7 +594,7 @@ export async function cmdPublish(pathArg, options = {}) {
     const result = options.resume
       ? await resumePublish(validated.slug, options)
       : await newPublish(pathArg, {
-          category: 'General', license: 'MIT', version: '1.0.0', royaltyBps: '500', maxSupply: '0', ...options,
+          license: 'MIT', version: '1.0.0', royaltyBps: '500', maxSupply: '0', ...options,
         }, validated);
     emitResult(options, result, () => {
       hd(options.dryRun ? 'FinChip CLI — publish dry run' : 'FinChip CLI — publish');
@@ -503,6 +604,7 @@ export async function cmdPublish(pathArg, options = {}) {
       if (result.contractAddr) inf(`contract: ${fmtAddr(result.contractAddr)}`);
       if (result.txHash) inf(`tx:       ${result.txHash}`);
       if (result.estimatedGas) inf(`gas:      ${result.estimatedGas}`);
+      inf(`encrypt:  ${result.encryptionMode}`);
     });
   } catch (error) {
     fail(options, error);

@@ -245,6 +245,11 @@ export const CHIP_ABI = [
   { type: 'function', name: 'imageURI',     stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'usageLimit',   stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { type: 'function', name: 'litDataSet',   stateMutability: 'view', inputs: [], outputs: [{ type: 'bool'    }] },
+  { type: 'function', name: 'getLitData',   stateMutability: 'view', inputs: [], outputs: [
+    { name: 'ciphertext',        type: 'string' },
+    { name: 'dataToEncryptHash', type: 'string' },
+    { name: 'chain',             type: 'string' },
+  ] },
   { type: 'function', name: 'supportsInterface', stateMutability: 'view',
     inputs: [{ name: 'interfaceId', type: 'bytes4' }],
     outputs: [{ type: 'bool' }] },
@@ -303,6 +308,11 @@ export const CHIP_721_ABI = [
   { type: 'function', name: 'imageURI',   stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'parentChip', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
   { type: 'function', name: 'litDataSet', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool'    }] },
+  { type: 'function', name: 'getLitData', stateMutability: 'view', inputs: [], outputs: [
+    { name: 'ciphertext',        type: 'string' },
+    { name: 'dataToEncryptHash', type: 'string' },
+    { name: 'chain',             type: 'string' },
+  ] },
   { type: 'function', name: 'supportsInterface', stateMutability: 'view',
     inputs: [{ name: 'interfaceId', type: 'bytes4' }],
     outputs: [{ type: 'bool' }] },
