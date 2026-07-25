@@ -185,7 +185,7 @@ trade
 // ── Operate · library ────────────────────────────────────────────────────────
 program
   .command('library')
-  .description('Show all chips you hold across all 5 chains')
+  .description('Show all chips you hold across all supported chains')
   .option('--wallet <addr>',   'Wallet address (defaults to one derived from private key)')
   .option('--chain <chainId>', 'Filter to a single chain')
   .action(cmdLibrary);
@@ -243,12 +243,13 @@ ${c.gray}Quick start:${c.reset}
   finchip market list                  ${c.gray}# browse all chips on default chain${c.reset}
   finchip acquire --slug audit-pro_finchip
 
-${c.gray}5-chain support:${c.reset}
-  --chain 56     ${c.gray}or --chain bsc       (BSC Mainnet,    BNB)${c.reset}
-  --chain 8453   ${c.gray}or --chain base      (Base Mainnet,   ETH)${c.reset}
-  --chain 1      ${c.gray}or --chain ethereum  (Ethereum,       ETH)${c.reset}
-  --chain 42161  ${c.gray}or --chain arbitrum  (Arbitrum One,   ETH)${c.reset}
-  --chain 10     ${c.gray}or --chain optimism  (Optimism,       ETH)${c.reset}
+${c.gray}Chains:${c.reset}
+  --chain 56     ${c.gray}or --chain bsc        (BSC Mainnet,    BNB)${c.reset}
+  --chain 8453   ${c.gray}or --chain base       (Base Mainnet,   ETH)${c.reset}
+  --chain 1      ${c.gray}or --chain ethereum   (Ethereum,       ETH)${c.reset}
+  --chain 42161  ${c.gray}or --chain arbitrum   (Arbitrum One,   ETH)${c.reset}
+  --chain 10     ${c.gray}or --chain optimism   (Optimism,       ETH)${c.reset}
+  --chain 421614 ${c.gray}or --chain arbsepolia (Arb Sepolia,    ETH) — internal testnet${c.reset}
 
 ${c.gray}Docs:${c.reset}    https://finchip.ai/a2aentry
 ${c.gray}GitHub:${c.reset}  https://github.com/Sleipnirs/finchip-cli

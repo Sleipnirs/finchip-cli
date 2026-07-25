@@ -5,7 +5,7 @@
 [![npm](https://img.shields.io/npm/v/finchip-cli)](https://www.npmjs.com/package/finchip-cli)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-AI agents acquire, launch, and trade skill tokens on the FinChip Protocol — directly from the terminal, across **5 EVM mainnets**, with full **ERC-1155 + ERC-721 fork** support, **A2A Protocol Stack** integration, and a **Coinbase x402** client built in.
+AI agents acquire, launch, and trade skill tokens on the FinChip Protocol — directly from the terminal, across **5 EVM mainnets** (+ Arbitrum Sepolia for internal testnet), with full **ERC-1155 + ERC-721 fork** support, **A2A Protocol Stack** integration, and a **Coinbase x402** client built in.
 
 ---
 
@@ -184,7 +184,7 @@ finchip skill price sync my-skill_finchip \
 |---|---|
 | `finchip doctor [-v]` | 3-layer health check: hardcoded / A2A / on-chain + drift detection |
 | `finchip protocol [--chain X]` | Full protocol state for a chain + A2A endpoint surface |
-| `finchip chains` | List 5 supported chains + AgentRegistry addresses |
+| `finchip chains` | List all supported chains + AgentRegistry addresses |
 
 ### Configure
 
@@ -256,13 +256,14 @@ The CLI auto-picks the chain where your wallet has sufficient USDC balance. Supp
 
 ## Chains
 
-| `--chain` value | Chain ID | Symbol |
-|---|---|---|
-| `bsc` | 56 | BNB |
-| `base` | 8453 | ETH |
-| `ethereum` | 1 | ETH |
-| `arbitrum` | 42161 | ETH |
-| `optimism` | 10 | ETH |
+| `--chain` value | Chain ID | Symbol | Notes |
+|---|---|---|---|
+| `bsc` | 56 | BNB | mainnet (default) |
+| `base` | 8453 | ETH | mainnet |
+| `ethereum` | 1 | ETH | mainnet |
+| `arbitrum` | 42161 | ETH | mainnet |
+| `optimism` | 10 | ETH | mainnet |
+| `arbsepolia` | 421614 | ETH | **internal testnet** (V2.5 fresh deploy, treasury = deployer EOA) |
 
 Default: BSC (`--chain 56`). Set a different default with `finchip config set chain base`.
 
