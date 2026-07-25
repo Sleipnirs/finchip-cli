@@ -101,6 +101,10 @@ export function resumeNeedsContentKey(state) {
   return !['key_prepared', 'key_submitted', 'key_set'].includes(state.stage) && !state.setLitTxHash;
 }
 
+export function resumeNeedsOnChainVerification(state, verifiedThisRun = false) {
+  return state.stage === 'key_set' && !verifiedThisRun;
+}
+
 function mapServiceError(mode, status) {
   if (status === 503) {
     return encryptionError(
@@ -148,7 +152,12 @@ export async function prepareEncryptionEnvelope({
 
   const normalizedWallet = walletAddr.toLowerCase();
   const message = `FinChip key request\nchip: ${contractAddr}\nwallet: ${normalizedWallet}\nnonce: ${Date.now()}`;
-  const signature = await signMessage(message);
+  let signature;
+  try {
+    signature = await signMessage(message);
+  } catch {
+    throw encryptionError('KEY_SETUP_FAILED', 'Wallet signature for encryption key preparation failed.', normalizedMode);
+  }
   const body = {
     chipAddress: contractAddr,
     chainId: chain.id,
@@ -164,11 +173,21 @@ export async function prepareEncryptionEnvelope({
     body.version = 'v2';
   }
 
-  const { response, payload } = await request(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let apiResult;
+  try {
+    apiResult = await request(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw encryptionError(
+      'ENCRYPTION_SERVICE_UNAVAILABLE',
+      'The Site encryption service could not be reached.',
+      normalizedMode,
+    );
+  }
+  const { response, payload } = apiResult;
   if (!response.ok) throw mapServiceError(normalizedMode, response.status);
 
   let ciphertext;

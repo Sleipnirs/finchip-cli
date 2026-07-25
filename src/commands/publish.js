@@ -32,6 +32,7 @@ import {
   normalizeResumeEncryptionState,
   prepareEncryptionEnvelope,
   resumeNeedsContentKey,
+  resumeNeedsOnChainVerification,
   verifyEncryptionTuple,
 } from '../publish-encryption.js';
 import { CliError, emitFailure, emitResult, fmtAddr, fmtChain, hd, inf, ok, sep, wrn } from '../utils.js';
@@ -241,6 +242,7 @@ async function finishPublish(state, context, contentKey) {
     state.stage = stage;
     savePublishState(client.origin, state.slug, state);
   };
+  let keyVerifiedThisRun = false;
 
   try {
     if (state.stage === 'broadcast') {
@@ -379,8 +381,13 @@ async function finishPublish(state, context, contentKey) {
         );
       }
       await verifySavedEncryption(publicClient, state);
+      keyVerifiedThisRun = true;
       delete state.sealedContentKey;
       save('key_set');
+    }
+
+    if (resumeNeedsOnChainVerification(state, keyVerifiedThisRun)) {
+      await verifySavedEncryption(publicClient, state);
     }
 
     const { response, payload } = await apiJson(client, '/api/chips/finalize-encrypted-source', {

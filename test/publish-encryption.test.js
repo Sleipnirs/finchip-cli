@@ -8,6 +8,7 @@ import {
   normalizeResumeEncryptionState,
   prepareEncryptionEnvelope,
   resumeNeedsContentKey,
+  resumeNeedsOnChainVerification,
   verifyEncryptionTuple,
 } from '../src/publish-encryption.js';
 
@@ -173,6 +174,8 @@ test('prepared and submitted recovery reuse the saved envelope without reopening
   assert.equal(resumeNeedsContentKey({ stage: 'key_prepared' }), false);
   assert.equal(resumeNeedsContentKey({ stage: 'key_submitted' }), false);
   assert.equal(resumeNeedsContentKey({ stage: 'registered', setLitTxHash: `0x${'ab'.repeat(32)}` }), false);
+  assert.equal(resumeNeedsOnChainVerification({ stage: 'key_set' }), true);
+  assert.equal(resumeNeedsOnChainVerification({ stage: 'key_set' }, true), false);
 });
 
 for (const [status, mode, code] of [
@@ -193,3 +196,28 @@ for (const [status, mode, code] of [
     );
   });
 }
+
+test('signature and network failures use stable encryption error codes without leaking request material', async () => {
+  const signing = fakeContext('lit', async () => {
+    throw new Error('request should not run');
+  });
+  signing.input.signMessage = async () => {
+    throw new Error('wallet rejected');
+  };
+  await assert.rejects(
+    prepareEncryptionEnvelope(signing.input),
+    error => error.code === 'KEY_SETUP_FAILED'
+      && error.details.encryptionMode === 'lit'
+      && !error.message.includes('secret'),
+  );
+
+  const network = fakeContext('finchip', async () => {
+    throw new Error('ECONNREFUSED with request internals');
+  });
+  await assert.rejects(
+    prepareEncryptionEnvelope(network.input),
+    error => error.code === 'ENCRYPTION_SERVICE_UNAVAILABLE'
+      && error.details.encryptionMode === 'finchip'
+      && !error.message.includes('ECONNREFUSED'),
+  );
+});
