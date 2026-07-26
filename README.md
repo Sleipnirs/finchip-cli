@@ -153,7 +153,7 @@ finchip acquire --slug audit-pro_finchip --yes
 finchip download audit-pro_finchip
 ```
 
-`skill show` 调用公开详情 API，不要求登录、钱包、私钥、FC key 或 RPC。该请求刻意不携带 Cookie、Authorization、Origin 或钱包签名；即使本机已经 `finchip login`，公共缓存路径也不会收到身份材料。指定部署时，`--chain` 与 `--addr` 必须一起提供：
+`skill show` 调用公开详情 API，不要求登录、钱包、私钥、FC key 或 RPC。该命令被定义为匿名公共视图：即使本机已经执行 `finchip login`，CLI 也不会发送 Cookie、Authorization、Origin 或钱包签名，从而保证结果不依赖本地登录状态，并避免发送不必要的身份凭据。指定部署时，`--chain` 与 `--addr` 必须一起提供：
 
 ```bash
 finchip skill show audit-pro_finchip \

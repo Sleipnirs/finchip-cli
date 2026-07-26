@@ -159,8 +159,8 @@ export class SkillDetailClient {
     let response;
     let text;
     try {
-      // This endpoint is publicly cacheable. Identity-bearing headers are
-      // intentionally absent so credentials cannot enter a shared cache path.
+      // `skill show` is intentionally anonymous. Identity-bearing headers are
+      // omitted so results never depend on the machine's local login state.
       response = await this.fetchImpl(url, {
         method: 'GET',
         headers: new Headers({ Accept: 'application/json' }),
