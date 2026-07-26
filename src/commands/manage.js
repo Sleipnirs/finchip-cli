@@ -12,7 +12,7 @@ import {
 } from '../manage-config.js';
 import { emitFailure, emitResult, fmtAddr, fmtChain, hd, inf, ok, sep } from '../utils.js';
 
-function deploymentOptions(options) {
+export function deploymentOptions(options) {
   if (Boolean(options.addr) !== Boolean(options.chain)) {
     throw new ManageError('SKILL_DEPLOYMENT_MISMATCH', '--addr and --chain must be provided together.', 3);
   }
@@ -23,7 +23,7 @@ function deploymentOptions(options) {
   return { addr: options.addr.toLowerCase(), chainId: resolveChain(options.chain).id };
 }
 
-function managePath(slug, deployment, extraQuery = null) {
+export function managePath(slug, deployment, extraQuery = null) {
   const query = new URLSearchParams();
   if (deployment) {
     query.set('addr', deployment.addr);
@@ -36,7 +36,7 @@ function managePath(slug, deployment, extraQuery = null) {
   return `/api/v2/skills/${encodeURIComponent(slug)}/manage${suffix}`;
 }
 
-function mapManageHttpError(response, payload, fallback = 'Skill management request failed.') {
+export function mapManageHttpError(response, payload, fallback = 'Skill management request failed.') {
   const serverCode = typeof payload?.code === 'string' ? payload.code : '';
   const message = payload?.error || `${fallback} (${response.status}).`;
   if (response.status === 401) return new ManageError('AUTH_REQUIRED', 'Run `finchip login` first.', 2);
@@ -50,7 +50,7 @@ function mapManageHttpError(response, payload, fallback = 'Skill management requ
   return new ManageError('MANAGE_INVALID', message, 3);
 }
 
-async function authenticatedManageJson(client, path, options = {}) {
+export async function authenticatedManageJson(client, path, options = {}) {
   try {
     return await client.authenticatedJson(path, options);
   } catch (error) {

@@ -8,6 +8,11 @@ import { CHIP_ABI, CHIP_721_ABI } from '../protocol.js';
 import { cmdPublish } from './publish.js';
 import { cmdSkillSearch } from './search.js';
 import { cmdSkillManageApply, cmdSkillManageGet } from './manage.js';
+import {
+  cmdSkillManageImageSet,
+  cmdSkillManagePageRestore,
+  cmdSkillManagePageUpload,
+} from './manage-assets.js';
 import { CliError, emitFailure, emitResult, fmtAddr, fmtChain, hd, inf, ok, sep } from '../utils.js';
 
 const TX_TIMEOUT_MS = 180_000;
@@ -82,6 +87,45 @@ export function registerSkillCommands(program) {
     .option('--dry-run', 'Validate and resolve references without sending PATCH')
     .option('--json', 'Emit machine-readable JSON')
     .action(cmdSkillManageApply);
+
+  const manageImage = skillManage.command('image').description('Manage the Skill display image');
+
+  manageImage
+    .command('set <slug>')
+    .description('Upload or replace the Skill display image')
+    .requiredOption('--file <image>', 'JPG, PNG, WebP, or GIF image')
+    .option('--chain <chainId>', 'Deployment chain ID or key')
+    .option('--addr <contract>', 'Deployment contract address')
+    .option('--dry-run', 'Validate and inspect current state without uploading')
+    .option('--yes', 'Confirm replacement of an existing image')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillManageImageSet);
+
+  const managePage = skillManage.command('page').description('Manage custom Skill HTML pages');
+
+  managePage
+    .command('upload <slug>')
+    .description('Upload one HTML page and optional flat assets')
+    .requiredOption('--kind <kind>', 'instruction, benchmark, or showcase')
+    .requiredOption('--html <file>', 'HTML entry file')
+    .option('--assets-dir <directory>', 'Directory containing first-level asset files')
+    .option('--chain <chainId>', 'Deployment chain ID or key')
+    .option('--addr <contract>', 'Deployment contract address')
+    .option('--dry-run', 'Validate and inspect current state without uploading')
+    .option('--yes', 'Confirm replacement of an existing custom page')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillManagePageUpload);
+
+  managePage
+    .command('restore <slug>')
+    .description('Remove a custom HTML page and restore the Site default')
+    .requiredOption('--kind <kind>', 'instruction, benchmark, or showcase')
+    .option('--chain <chainId>', 'Deployment chain ID or key')
+    .option('--addr <contract>', 'Deployment contract address')
+    .option('--dry-run', 'Inspect current state without restoring')
+    .option('--yes', 'Confirm removal of the custom page')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillManagePageRestore);
 
   const skillPrice = skill.command('price').description('Manage a Skill deployment price');
 
