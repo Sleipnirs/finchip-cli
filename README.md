@@ -144,6 +144,10 @@ finchip skill search wallet --limit 20 --offset 20 --json
 ```bash
 finchip skill get my-skill_finchip --chain bsc --addr 0x1111111111111111111111111111111111111111
 
+finchip skill manage get my-skill_finchip --json
+finchip skill manage apply my-skill_finchip --file ./manage.json --dry-run
+finchip skill manage apply my-skill_finchip --file ./manage.json
+
 finchip skill price set my-skill_finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
@@ -154,6 +158,10 @@ finchip skill price sync my-skill_finchip \
   --addr 0x1111111111111111111111111111111111111111 \
   --tx-hash 0xabababababababababababababababababababababababababababababababab
 ```
+
+`skill get` 保留简要 Creator 状态；`skill manage get` 返回完整状态和可直接编辑的 `editable` JSON。`manage apply` 接受最多 1 MiB 的声明式 JSON，`--file -` 可从 stdin 读取。省略字段保持不变；`supportedAgents` 与 `relatedSkillSlugs` 一旦出现就整体替换，空数组表示清空。可清除字段使用 `null` 或空字符串。
+
+Manage API 只使用 `finchip login` 保存的 Cookie，不发送 viewer signature、`wallet_addr` 或 FC key。`imagePath` 只能通过后续的图片命令管理：它不会出现在 `editable`，也不会由 `manage apply` 发回 Site。关联 Skill 在 CLI 中使用 slug，发送 PATCH 前会精确解析为 Site 内部 ID；PATCH 后 CLI 会重新读取状态，检查 Agent 与关联 Skill 是否被 Site 原样保存。
 
 CLI 暂不创建 ERC-721 Chip，但已有 ERC-721 的查询、购买、持仓和二级市场操作继续支持。
 
@@ -232,7 +240,7 @@ finchip config unset rpc
 | `finchip skill publish` | 唯一完整加密发布入口 |
 | `finchip download` | 授权下载并解密；不安装、不执行 |
 | `finchip skill search` | 搜索 Site 索引中的 Web3 Skill |
-| `finchip skill get/price` | Creator 管理 |
+| `finchip skill get/manage/price` | Creator 管理 |
 | `finchip market list/search` | 直接浏览链上 ERC-1155/721 registry |
 | `finchip acquire` | 购买 license 或 fork |
 | `finchip library` | 按钱包查看持仓 |

@@ -7,6 +7,7 @@ import { resolveChain } from '../chains.js';
 import { CHIP_ABI, CHIP_721_ABI } from '../protocol.js';
 import { cmdPublish } from './publish.js';
 import { cmdSkillSearch } from './search.js';
+import { cmdSkillManageApply, cmdSkillManageGet } from './manage.js';
 import { CliError, emitFailure, emitResult, fmtAddr, fmtChain, hd, inf, ok, sep } from '../utils.js';
 
 const TX_TIMEOUT_MS = 180_000;
@@ -61,6 +62,26 @@ export function registerSkillCommands(program) {
     .option('--addr <contract>', 'Deployment contract address')
     .option('--json', 'Emit machine-readable JSON')
     .action(cmdSkillGet);
+
+  const skillManage = skill.command('manage').description('Manage creator-owned Skill presentation and bindings');
+
+  skillManage
+    .command('get <slug>')
+    .description('Show the complete editable Skill management state')
+    .option('--chain <chainId>', 'Deployment chain ID or key')
+    .option('--addr <contract>', 'Deployment contract address')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillManageGet);
+
+  skillManage
+    .command('apply <slug>')
+    .description('Apply a declarative Skill management JSON document')
+    .requiredOption('--file <path>', 'JSON file path, or - to read stdin')
+    .option('--chain <chainId>', 'Deployment chain ID or key')
+    .option('--addr <contract>', 'Deployment contract address')
+    .option('--dry-run', 'Validate and resolve references without sending PATCH')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillManageApply);
 
   const skillPrice = skill.command('price').description('Manage a Skill deployment price');
 
