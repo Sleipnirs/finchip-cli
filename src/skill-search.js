@@ -57,7 +57,7 @@ function mapSkill(skill) {
       contractAddr: nullable(skill.chip_address),
       chainId: numeric(skill.chain_id),
       // Site intentionally returns a native-unit number here. Do not recompute
-      // it from price_wei: skill get uses exact bigint math and may differ in
+      // it from price_wei: on-chain acquire uses exact bigint math and may differ in
       // the final floating-point digit.
       price: numeric(skill.chip_price),
       installCount: numeric(skill.install_count, 0),

@@ -108,11 +108,15 @@ market
 // ── Operate · acquire ────────────────────────────────────────────────────────
 program
   .command('acquire')
-  .description('Purchase a license (ERC-1155) or fork (ERC-721)')
+  .description('Preflight or purchase a license (ERC-1155) or fork (ERC-721)')
   .requiredOption('--slug <slug>', 'Chip slug (e.g. audit-pro_finchip)')
   .option('--chain <chainId>',     'Chain ID or key')
-  .option('--fork',                'Force ERC-721 path (purchaseFork)')
-  .option('--force',               'Acquire even if already holding')
+  .option('--addr <contract>',      'Exact deployment contract address')
+  .option('--fork',                'Use the legacy ERC-721 fork path')
+  .option('--force',               'Allow another purchase when already holding')
+  .option('--dry-run',             'Run the complete read-only purchase preflight')
+  .option('--yes',                 'Explicitly confirm signing and broadcasting the purchase')
+  .option('--json',                'Emit machine-readable JSON')
   .action(cmdAcquire);
 
 registerSkillCommands(program);
@@ -224,7 +228,7 @@ ${c.gray}Quick start:${c.reset}
   finchip register --perm full
   finchip doctor                       ${c.gray}# full A2A + protocol health check${c.reset}
   finchip market list                  ${c.gray}# browse all chips on default chain${c.reset}
-  finchip acquire --slug audit-pro_finchip
+  finchip acquire --slug audit-pro_finchip --dry-run
 
 ${c.gray}Chains:${c.reset}
   --chain 56     ${c.gray}or --chain bsc        (BSC Mainnet,    BNB)${c.reset}

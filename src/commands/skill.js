@@ -7,6 +7,7 @@ import { resolveChain } from '../chains.js';
 import { CHIP_ABI, CHIP_721_ABI } from '../protocol.js';
 import { cmdPublish } from './publish.js';
 import { cmdSkillSearch } from './search.js';
+import { cmdSkillShow } from './show.js';
 import { cmdSkillManageApply, cmdSkillManageGet } from './manage.js';
 import {
   cmdSkillManageImageSet,
@@ -62,12 +63,12 @@ export function registerSkillCommands(program) {
     .action(cmdSkillSearch);
 
   skill
-    .command('get <slug>')
-    .description('Show creator management data for a Skill')
+    .command('show <slug>')
+    .description('Show anonymous public details for any FinChip Skill')
     .option('--chain <chainId>', 'Deployment chain ID or key')
     .option('--addr <contract>', 'Deployment contract address')
     .option('--json', 'Emit machine-readable JSON')
-    .action(cmdSkillGet);
+    .action(cmdSkillShow);
 
   const skillManage = skill.command('manage').description('Manage creator-owned Skill presentation and bindings');
 
@@ -195,57 +196,6 @@ async function manageGet(slug, options, requireDeployment = false) {
     throw new SkillError('SKILL_DEPLOYMENT_REQUIRED', `Use canonical slug ${payload.canonicalSlug} for this deployment.`, 3);
   }
   return { client, session, deployment, payload };
-}
-
-function summarize(payload) {
-  const skill = payload.skill || {};
-  return {
-    id: skill.id || null,
-    slug: skill.slug || null,
-    title: skill.title || null,
-    description: skill.description || null,
-    category: skill.category || null,
-    isOnChain: Boolean(skill.is_on_chain),
-    contractAddr: skill.chip_address || null,
-    chainId: skill.chain_id ?? null,
-    tokenType: skill.token_type || null,
-    priceWei: skill.price_wei == null ? null : String(skill.price_wei),
-    price: skill.price_wei == null ? null : formatEther(BigInt(skill.price_wei)),
-  };
-}
-
-export async function cmdSkillGet(slug, options = {}) {
-  try {
-    const { payload } = await manageGet(slug, options);
-    const skill = summarize(payload);
-    const deployment = {
-      contractAddr: skill.contractAddr,
-      chainId: skill.chainId,
-      tokenType: skill.tokenType,
-      priceWei: skill.priceWei,
-      price: skill.price,
-    };
-    const binding = {
-      supportedAgentCount: Array.isArray(payload.supportedAgents) ? payload.supportedAgents.length : 0,
-      relatedSkillCount: Array.isArray(payload.relatedSkills) ? payload.relatedSkills.length : 0,
-      hasStudio: Boolean(payload.studio),
-    };
-    const result = { ok: true, code: 'SKILL_FOUND', skill, deployment, binding };
-    emitResult(options, result, () => {
-      hd('FinChip CLI — skill');
-      sep();
-      ok(skill.slug || slug);
-      inf(`title:    ${skill.title || '(not set)'}`);
-      inf(`category: ${skill.category || '(not set)'}`);
-      inf(`chain:    ${skill.chainId == null ? '(not on-chain)' : fmtChain(skill.chainId)}`);
-      inf(`contract: ${skill.contractAddr ? fmtAddr(skill.contractAddr) : '(none)'}`);
-      inf(`type:     ${skill.tokenType || '(unknown)'}`);
-      inf(`price:    ${skill.price ?? '(unknown)'}`);
-      inf(`bindings: ${binding.supportedAgentCount} agents, ${binding.relatedSkillCount} related skills`);
-    });
-  } catch (error) {
-    fail(options, error);
-  }
 }
 
 async function resolveTokenType(publicClient, addr, hint) {

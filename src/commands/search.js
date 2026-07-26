@@ -33,6 +33,14 @@ function renderSearchResults(result) {
       inf(`chain: ${skill.deployment.chainId == null ? 'unknown' : fmtChain(skill.deployment.chainId)} · price: ${formatPrice(skill.deployment)}`);
       inf(`contract: ${skill.deployment.contractAddr || 'unknown'}`);
       inf(`safety: ${formatSafety(skill.safety)}`);
+      if (skill.slug) inf(`show: finchip skill show ${skill.slug}`);
+      if (skill.slug && skill.deployment.chainId != null && skill.deployment.contractAddr) {
+        inf(
+          `preflight: finchip acquire --slug ${skill.slug}`
+          + ` --chain ${skill.deployment.chainId}`
+          + ` --addr ${skill.deployment.contractAddr} --dry-run`
+        );
+      }
       console.log('');
     }
   }

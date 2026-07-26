@@ -33,7 +33,9 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   const skillHelp = await runCli(['skill', '--help'], {});
   assert.equal(skillHelp.code, 0, skillHelp.stderr);
   assert.match(skillHelp.stdout, /publish \[options\] \[path\]/);
-  assert.match(skillHelp.stdout, /get \[options\] <slug>/);
+  assert.match(skillHelp.stdout, /show \[options\] <slug>/);
+  assert.doesNotMatch(skillHelp.stdout, /^\s+get \[options\] <slug>/m);
+  assert.match(skillHelp.stdout, /manage/);
   assert.match(skillHelp.stdout, /price/);
 
   const publishHelp = await runCli(['skill', 'publish', '--help'], {});
@@ -46,6 +48,13 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   const legacyHelp = await runCli(['publish', '--help'], {});
   assert.equal(legacyHelp.code, 0, legacyHelp.stderr);
   assert.match(legacyHelp.stdout, /--resume <slug>/);
+
+  const acquireHelp = await runCli(['acquire', '--help'], {});
+  assert.equal(acquireHelp.code, 0, acquireHelp.stderr);
+  assert.match(acquireHelp.stdout, /--addr <contract>/);
+  assert.match(acquireHelp.stdout, /--dry-run/);
+  assert.match(acquireHelp.stdout, /--yes/);
+  assert.match(acquireHelp.stdout, /--json/);
 
   const home = mkdtempSync(join(tmpdir(), 'finchip-skill-publish-alias-'));
   const env = { HOME: home, FINCHIP_CREDENTIALS_PATH: join(home, 'credentials.json') };
@@ -60,7 +69,7 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   assert.equal(JSON.parse(primary.stdout).encryptionMode, 'finchip');
 });
 
-test('skill get and price sync use creator manage endpoints with stable JSON', async () => {
+test('skill manage get and price sync keep using creator manage endpoints with stable JSON', async () => {
   const requests = [];
   const server = createServer((req, res) => {
     const chunks = [];
@@ -104,9 +113,9 @@ test('skill get and price sync use creator manage endpoints with stable JSON', a
   }, { path: credentialsPath });
   const env = { FINCHIP_API_URL: origin, FINCHIP_CREDENTIALS_PATH: credentialsPath };
   try {
-    const get = await runCli(['skill', 'get', 'demo_finchip', '--chain', '56', '--addr', ADDR, '--json'], env);
+    const get = await runCli(['skill', 'manage', 'get', 'demo_finchip', '--chain', '56', '--addr', ADDR, '--json'], env);
     assert.equal(get.code, 0, `${get.stderr}\n${get.stdout}`);
-    assert.equal(JSON.parse(get.stdout).code, 'SKILL_FOUND');
+    assert.equal(JSON.parse(get.stdout).code, 'SKILL_MANAGE_STATE');
     assert.doesNotMatch(get.stdout, /account-secret|wallet-secret/);
 
     const sync = await runCli(['skill', 'price', 'sync', 'demo_finchip', '--chain', '56', '--addr', ADDR, '--tx-hash', TX_HASH, '--json'], env);
