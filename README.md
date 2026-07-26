@@ -147,6 +147,14 @@ finchip skill get my-skill_finchip --chain bsc --addr 0x111111111111111111111111
 finchip skill manage get my-skill_finchip --json
 finchip skill manage apply my-skill_finchip --file ./manage.json --dry-run
 finchip skill manage apply my-skill_finchip --file ./manage.json
+finchip skill manage image set my-skill_finchip --file ./cover.png --dry-run
+finchip skill manage image set my-skill_finchip --file ./cover.png --yes
+finchip skill manage page upload my-skill_finchip \
+  --kind instruction \
+  --html ./instruction.html \
+  --assets-dir ./assets \
+  --dry-run
+finchip skill manage page restore my-skill_finchip --kind instruction --yes
 
 finchip skill price set my-skill_finchip \
   --chain bsc \
@@ -162,6 +170,10 @@ finchip skill price sync my-skill_finchip \
 `skill get` 保留简要 Creator 状态；`skill manage get` 返回完整状态和可直接编辑的 `editable` JSON。`manage apply` 接受最多 1 MiB 的声明式 JSON，`--file -` 可从 stdin 读取。省略字段保持不变；`supportedAgents` 与 `relatedSkillSlugs` 一旦出现就整体替换，空数组表示清空。可清除字段使用 `null` 或空字符串。
 
 Manage API 只使用 `finchip login` 保存的 Cookie，不发送 viewer signature、`wallet_addr` 或 FC key。`imagePath` 只能通过后续的图片命令管理：它不会出现在 `editable`，也不会由 `manage apply` 发回 Site。关联 Skill 在 CLI 中使用 slug，发送 PATCH 前会精确解析为 Site 内部 ID；PATCH 后 CLI 会重新读取状态，检查 Agent 与关联 Skill 是否被 Site 原样保存。
+
+图片支持 JPG、PNG、WebP、GIF，最大 4 MiB；CLI 会同时校验扩展名和 magic bytes。已有图片的替换需要 `--yes`，首次上传不需要。Site 当前没有单独删除图片的 Manage API，因此 CLI 不提供 image remove。
+
+自定义 instruction、benchmark、showcase 页面由一个 HTML 文件和可选的平铺 assets 目录组成，总计最多 4 MiB。CLI 不递归目录、不跟随 symlink，禁止 JavaScript 资产、`<script>`、root-absolute URL 和嵌套 asset 路径；外部图片 host 最终仍由 Site 的账户 allowlist 判定。覆盖已有页面和 restore 会先清理服务器端资源，因此真实执行需要 `--yes`，网络结果不确定时 CLI 不会自动重试。
 
 CLI 暂不创建 ERC-721 Chip，但已有 ERC-721 的查询、购买、持仓和二级市场操作继续支持。
 
