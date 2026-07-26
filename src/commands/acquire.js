@@ -190,6 +190,11 @@ function contractPlan(tokenStandard) {
       };
 }
 
+function failureDetails(result, extra = {}) {
+  const { ok: _ok, code: _code, ...details } = result;
+  return { ...details, ...extra };
+}
+
 async function preflight(publicClient, deployment, account, tokenStandard, options = {}) {
   const plan = contractPlan(tokenStandard);
   const base = {
@@ -395,7 +400,7 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
       'ACQUIRE_CONFIRM_REQUIRED',
       'Purchase preflight passed. Re-run with --yes to broadcast, or --dry-run for a successful read-only result.',
       3,
-      preview
+      failureDetails(preview)
     );
   }
 
@@ -411,7 +416,7 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
       'RPC_UNAVAILABLE',
       'Unable to create a wallet client for the selected deployment RPC.',
       5,
-      preview
+      failureDetails(preview)
     );
   }
 
@@ -419,6 +424,7 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
   try {
     txHash = await walletClient.writeContract({
       ...prepared.simulatedRequest,
+      account,
       gas: BigInt(preview.estimatedGas) + BigInt(preview.estimatedGas) / GAS_BUFFER_DIVISOR,
     });
   } catch {
@@ -426,7 +432,7 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
       'ACQUIRE_TX_FAILED',
       'The purchase transaction could not be broadcast.',
       5,
-      preview
+      failureDetails(preview)
     );
   }
 
@@ -442,7 +448,7 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
       'ACQUIRE_RESULT_UNKNOWN',
       'The transaction was broadcast, but its final result is unknown. Check the receipt or library before retrying.',
       5,
-      { ...preview, txHash, retrySafe: false }
+      failureDetails(preview, { txHash, retrySafe: false })
     );
   }
   if (receipt.status !== 'success') {
@@ -450,7 +456,7 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
       'ACQUIRE_TX_FAILED',
       'The purchase transaction reverted.',
       5,
-      { ...preview, txHash, blockNumber: receipt.blockNumber?.toString() ?? null }
+      failureDetails(preview, { txHash, blockNumber: receipt.blockNumber?.toString() ?? null })
     );
   }
 
@@ -467,7 +473,7 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
       'ACQUIRE_VERIFY_FAILED',
       'The transaction succeeded, but the resulting holding could not be verified.',
       5,
-      { ...preview, txHash, blockNumber: receipt.blockNumber?.toString() ?? null }
+      failureDetails(preview, { txHash, blockNumber: receipt.blockNumber?.toString() ?? null })
     );
   }
   if (heldAfter <= prepared.heldBefore) {
@@ -475,7 +481,7 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
       'ACQUIRE_VERIFY_FAILED',
       'The transaction succeeded, but the wallet holding did not increase.',
       5,
-      { ...preview, txHash, blockNumber: receipt.blockNumber?.toString() ?? null }
+      failureDetails(preview, { txHash, blockNumber: receipt.blockNumber?.toString() ?? null })
     );
   }
 

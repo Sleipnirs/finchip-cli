@@ -42,7 +42,12 @@ function publicClient(options = {}) {
     async getBalance() { return options.walletBalance ?? 1_000_000n; },
     async simulateContract(request) {
       if (options.simulationError) throw new Error('secret revert payload');
-      return { request };
+      return {
+        request: {
+          ...request,
+          account: { address: request.account, type: 'json-rpc' },
+        },
+      };
     },
     async estimateContractGas() { return 21_000n; },
     async estimateFeesPerGas() { return { maxFeePerGas: 2n }; },
@@ -63,7 +68,7 @@ function dependencies(options = {}) {
     detailClient: { get: async () => options.detail || detail() },
     loadConfig: () => ({ chain: 56, rpc: 'mock-rpc' }),
     resolvePrivateKey: () => `0x${'11'.repeat(32)}`,
-    accountFromPrivateKey: () => ({ address: WALLET }),
+    accountFromPrivateKey: () => ({ address: WALLET, type: 'local' }),
     publicClientFactory: chainId => {
       calls.chains.push(chainId);
       return pub;
@@ -72,7 +77,9 @@ function dependencies(options = {}) {
       calls.walletChain = chainId;
       return {
         client: {
-          async writeContract() {
+          async writeContract(request) {
+            calls.writeRequest = request;
+            if (options.writeError) throw new Error('public RPC has no JSON-RPC wallet');
             calls.writes += 1;
             return TX_HASH;
           },
@@ -104,6 +111,7 @@ test('acquire without --yes completes preflight but never signs or broadcasts', 
     error => error.code === 'ACQUIRE_CONFIRM_REQUIRED'
       && error.details.chainId === 8453
       && error.details.priceWei === '10'
+      && !Object.hasOwn(error.details, 'ok')
   );
   assert.equal(deps.calls.writes, 0);
 });
@@ -120,6 +128,7 @@ test('acquire is idempotent for existing holdings unless force and yes are expli
   assert.equal(complete.code, 'ACQUIRE_COMPLETE');
   assert.equal(complete.txHash, TX_HASH);
   assert.equal(forced.calls.writes, 1);
+  assert.equal(forced.calls.writeRequest.account.type, 'local');
 });
 
 test('acquire maps preflight and post-broadcast failures to stable contracts', async () => {
@@ -136,6 +145,13 @@ test('acquire maps preflight and post-broadcast failures to stable contracts', a
       && error.details.txHash === TX_HASH
       && error.details.retrySafe === false
       && !/timeout detail/.test(error.message)
+  );
+
+  const broadcast = dependencies({ writeError: true });
+  await assert.rejects(
+    () => acquireSkill({ slug: 'audit', yes: true }, broadcast),
+    error => error.code === 'ACQUIRE_TX_FAILED'
+      && !Object.hasOwn(error.details, 'ok')
   );
 });
 
