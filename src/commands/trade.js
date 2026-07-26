@@ -7,6 +7,7 @@ import {
   CHIP_ABI, CHIP_721_ABI, IFACE_ID,
 } from '../protocol.js';
 import { resolveChain } from '../chains.js';
+import { canonicalSlug, siteCanonicalSlug } from '../skill-slug.js';
 import { ok, err, inf, hd, sep, fmtAddr, fmtWei, fmtChain, fmtTxLink, c } from '../utils.js';
 
 // ── List active listings ────────────────────────────────────────────────────
@@ -154,10 +155,12 @@ export async function cmdTradeBuy(options) {
 export async function cmdTradeSell(options) {
   const cfg    = loadConfig();
   const chain  = resolveChain(options.chain || cfg.chain);
-  const { slug, price, qty } = options;
+  const { price, qty } = options;
   const forceFork = !!options.fork;
 
-  if (!slug || !price) { err('--slug and --price are required'); process.exit(1); }
+  if (!options.slug || !price) { err('--slug and --price are required'); process.exit(1); }
+  const slug = siteCanonicalSlug(options.slug);
+  const onchainSlug = canonicalSlug(options.slug);
 
   const proto = await resolveProtocol(chain.id, cfg.rpc).catch(e => {
     err(`Discovery failed: ${e.shortMessage || e.message}`); process.exit(1);
@@ -169,7 +172,7 @@ export async function cmdTradeSell(options) {
   // Resolve chip
   const chipAddr = await pubClient.readContract({
     address: proto.chipRegistry, abi: CHIP_REGISTRY_ABI,
-    functionName: 'resolve', args: [slug],
+    functionName: 'resolve', args: [onchainSlug],
   });
   if (!chipAddr || chipAddr === '0x0000000000000000000000000000000000000000') {
     err(`Slug not found: ${slug}`); process.exit(1);

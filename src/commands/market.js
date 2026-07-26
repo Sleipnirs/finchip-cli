@@ -4,6 +4,7 @@ import { resolveProtocol } from '../discovery.js';
 import { getPublicClient } from '../client.js';
 import { CHIP_REGISTRY_ABI, CHIP_ABI, CHIP_721_ABI, IFACE_ID } from '../protocol.js';
 import { resolveChain } from '../chains.js';
+import { siteCanonicalSlug } from '../skill-slug.js';
 import { err, inf, hd, sep, fmtWei, fmtChain, c } from '../utils.js';
 
 export async function readChipMarketDetails(client, addr, slug) {
@@ -36,7 +37,7 @@ export async function readChipMarketDetails(client, addr, slug) {
   ]);
 
   return {
-    slug,
+    slug: siteCanonicalSlug(slug),
     addr,
     name,
     price,

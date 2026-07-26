@@ -21,9 +21,10 @@ test('market reads ERC-721 chips with fork getters', async () => {
   const details = await readChipMarketDetails(
     client,
     '0x1111111111111111111111111111111111111111',
-    'forkable-agent',
+    'forkable-agent_finchip',
   );
 
+  assert.equal(details.slug, 'forkable-agent-finchip');
   assert.equal(details.kind, 'ERC-721');
   assert.equal(details.price, 25n);
   assert.equal(details.totalMinted, 3n);
@@ -56,9 +57,10 @@ test('market keeps ERC-1155 getters for non-ERC-721 chips', async () => {
   const details = await readChipMarketDetails(
     client,
     '0x2222222222222222222222222222222222222222',
-    'licensed-skill',
+    'licensed-skill_finchip',
   );
 
+  assert.equal(details.slug, 'licensed-skill-finchip');
   assert.equal(details.kind, 'ERC-1155');
   assert.equal(details.price, 7n);
   assert.ok(calls.includes('licensePrice'));

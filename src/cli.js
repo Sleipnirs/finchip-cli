@@ -109,7 +109,7 @@ market
 program
   .command('acquire')
   .description('Preflight or purchase a license (ERC-1155) or fork (ERC-721)')
-  .requiredOption('--slug <slug>', 'Chip slug (e.g. audit-pro_finchip)')
+  .requiredOption('--slug <slug>', 'Skill slug (e.g. audit-pro-finchip; legacy _finchip is accepted)')
   .option('--chain <chainId>',     'Chain ID or key')
   .option('--addr <contract>',      'Exact deployment contract address')
   .option('--fork',                'Use the legacy ERC-721 fork path')
@@ -228,7 +228,7 @@ ${c.gray}Quick start:${c.reset}
   finchip register --perm full
   finchip doctor                       ${c.gray}# full A2A + protocol health check${c.reset}
   finchip market list                  ${c.gray}# browse all chips on default chain${c.reset}
-  finchip acquire --slug audit-pro_finchip --dry-run
+  finchip acquire --slug audit-pro-finchip --dry-run
 
 ${c.gray}Chains:${c.reset}
   --chain 56     ${c.gray}or --chain bsc        (BSC Mainnet,    BNB)${c.reset}

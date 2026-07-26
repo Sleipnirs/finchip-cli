@@ -53,6 +53,8 @@ finchip skill publish ./my-skill \
 
 新发布必须显式填写 `--category`，避免未填写的内容被静默归入错误分类。`--license`、`--version`、`--royalty-bps` 和 `--max-supply` 有平台默认值。
 
+CLI 对外统一显示并接受 Site canonical slug，例如 `my-skill-finchip`。现有链上 Registry 的技术 slug 仍是 `my-skill_finchip`；CLI 会在链上查询时自动转换，历史 `_finchip` 输入也继续兼容。Publish JSON 的 `slug` 是 Site canonical slug，`onchainSlug` 用于链上诊断和恢复，不需要用户日常记忆。
+
 ### 加密方式
 
 | `--encrypt` | 行为 |
@@ -91,9 +93,9 @@ finchip skill publish --resume my-skill --json
 `download` 只保存原始文件或 ZIP，不解压、不安装、不执行：
 
 ```bash
-finchip download my-skill_finchip
-finchip download my-skill_finchip --dir ./downloads --json
-finchip download my-skill_finchip \
+finchip download my-skill-finchip
+finchip download my-skill-finchip --dir ./downloads --json
+finchip download my-skill-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
   --no-provenance
@@ -147,16 +149,16 @@ finchip skill search wallet --limit 20 --offset 20 --json
 
 ```bash
 finchip skill search "security audit"
-finchip skill show audit-pro_finchip
-finchip acquire --slug audit-pro_finchip --dry-run
-finchip acquire --slug audit-pro_finchip --yes
-finchip download audit-pro_finchip
+finchip skill show audit-pro-finchip
+finchip acquire --slug audit-pro-finchip --dry-run
+finchip acquire --slug audit-pro-finchip --yes
+finchip download audit-pro-finchip
 ```
 
 `skill show` 调用公开详情 API，不要求登录、钱包、私钥、FC key 或 RPC。该命令被定义为匿名公共视图：即使本机已经执行 `finchip login`，CLI 也不会发送 Cookie、Authorization、Origin 或钱包签名，从而保证结果不依赖本地登录状态，并避免发送不必要的身份凭据。指定部署时，`--chain` 与 `--addr` 必须一起提供：
 
 ```bash
-finchip skill show audit-pro_finchip \
+finchip skill show audit-pro-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
   --json
@@ -177,32 +179,32 @@ Site 有可能在找不到指定部署时回退到同 slug 的 canonical deploym
 ## Skill 管理
 
 ```bash
-finchip skill manage get my-skill_finchip --json
-finchip skill manage apply my-skill_finchip --file ./manage.json --dry-run
-finchip skill manage apply my-skill_finchip --file ./manage.json
-finchip skill manage image set my-skill_finchip --file ./cover.png --dry-run
-finchip skill manage image set my-skill_finchip --file ./cover.png --yes
-finchip skill manage page upload my-skill_finchip \
+finchip skill manage get my-skill-finchip --json
+finchip skill manage apply my-skill-finchip --file ./manage.json --dry-run
+finchip skill manage apply my-skill-finchip --file ./manage.json
+finchip skill manage image set my-skill-finchip --file ./cover.png --dry-run
+finchip skill manage image set my-skill-finchip --file ./cover.png --yes
+finchip skill manage page upload my-skill-finchip \
   --kind instruction \
   --html ./instruction.html \
   --assets-dir ./assets \
   --dry-run
-finchip skill manage page restore my-skill_finchip --kind instruction --yes
-finchip skill manage attest my-skill_finchip \
+finchip skill manage page restore my-skill-finchip --kind instruction --yes
+finchip skill manage attest my-skill-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
   --dry-run
-finchip skill manage attest my-skill_finchip \
+finchip skill manage attest my-skill-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
   --yes
 
-finchip skill price set my-skill_finchip \
+finchip skill price set my-skill-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
   --price 0.02
 
-finchip skill price sync my-skill_finchip \
+finchip skill price sync my-skill-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
   --tx-hash 0xabababababababababababababababababababababababababababababababab
@@ -225,8 +227,8 @@ CLI 暂不创建 ERC-721 Chip，但已有 ERC-721 的查询、购买、持仓和
 ```bash
 finchip market list --chain bsc
 finchip market search --chain base --category "Dev Environment"
-finchip acquire --slug audit-pro_finchip --dry-run
-finchip acquire --slug audit-pro_finchip --chain bsc --addr 0x1111111111111111111111111111111111111111 --yes
+finchip acquire --slug audit-pro-finchip --dry-run
+finchip acquire --slug audit-pro-finchip --chain bsc --addr 0x1111111111111111111111111111111111111111 --yes
 finchip library
 finchip library --chain bsc
 ```
@@ -238,8 +240,8 @@ Market 会通过 ERC-165 区分 ERC-1155 与 ERC-721。ERC-721 使用 `forkPrice
 ```bash
 finchip trade list --chain bsc
 finchip trade buy --id 1 --chain bsc
-finchip trade sell --slug audit-pro_finchip --price 0.02 --chain bsc
-finchip trade sell --slug forkable_finchip --fork --token-id 7 --price 0.10 --chain bsc
+finchip trade sell --slug audit-pro-finchip --price 0.02 --chain bsc
+finchip trade sell --slug forkable-finchip --fork --token-id 7 --price 0.10 --chain bsc
 finchip trade cancel --id 1 --chain bsc
 ```
 

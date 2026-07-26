@@ -28,7 +28,7 @@ function configurePublish(command) {
   return command
     .description('Publish an encrypted ERC-1155 Skill through the canonical FinChip flow')
     .option('--resume <slug>', 'Resume a previously interrupted publish')
-    .option('--slug <slug>', 'Canonical Skill slug (the _finchip suffix is optional)')
+    .option('--slug <slug>', 'Canonical Skill slug (the -finchip suffix is optional)')
     .option('--name <name>', 'Skill name')
     .option('--description <text>', 'Skill description')
     .option('--price <price>', 'License price in native currency')

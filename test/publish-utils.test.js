@@ -19,15 +19,24 @@ import {
   sealRecoverySecret,
   selectPrimaryIndex,
   sha256Hex,
+  siteCanonicalSlug,
   wrapFinchipV2ContentKey,
 } from '../src/publish-utils.js';
 import { assertOwnerOnlyPermissions } from '../test-support/private-permissions.js';
 
 const PRIVATE_KEY = `0x${'1'.padStart(64, '0')}`;
 
-test('canonical slug preserves one _finchip suffix', () => {
+test('slug helpers separate the Site slug from the legacy on-chain slug', () => {
   assert.equal(canonicalSlug('My Skill'), 'my-skill_finchip');
   assert.equal(canonicalSlug('my-skill_finchip'), 'my-skill_finchip');
+  assert.equal(canonicalSlug('my-skill-finchip'), 'my-skill_finchip');
+  assert.equal(siteCanonicalSlug('My Skill'), 'my-skill-finchip');
+  assert.equal(siteCanonicalSlug('my-skill_finchip'), 'my-skill-finchip');
+  assert.equal(siteCanonicalSlug('my-skill-finchip'), 'my-skill-finchip');
+  assert.equal(canonicalSlug('my - skill'), 'my-skill_finchip');
+  assert.equal(siteCanonicalSlug('my - skill'), 'my-skill-finchip');
+  assert.equal(canonicalSlug('AI - Agent Tools'), 'ai-agent-tools_finchip');
+  assert.equal(siteCanonicalSlug('AI - Agent Tools'), 'ai-agent-tools-finchip');
 });
 
 test('source safety rejects common credentials and selects SKILL.md first', () => {
