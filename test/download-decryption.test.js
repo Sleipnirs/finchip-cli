@@ -114,6 +114,30 @@ test('an uncertain Oracle response is not resent with the same signed payload', 
   assert.equal(requests, 1);
 });
 
+test('Oracle preserves a stable DownloadError already produced by the request layer', async () => {
+  const lowerLevel = new DownloadError(
+    'DECRYPT_SERVICE_UNAVAILABLE',
+    'Lower-level request diagnostic.',
+    5,
+    { source: 'postJson', resumable: true },
+  );
+  await assert.rejects(
+    () => requestOracleV2Key({
+      account: { address: WALLET, signMessage: async () => 'signature' },
+      chipAddress: CHIP,
+      chainId: 56,
+      now: () => 1000,
+      generateKeyPair: async () => ({ publicKeyJwk: { x: 'x', y: 'y' }, privateKey: 'private' }),
+      fingerprint: async () => '0'.repeat(64),
+      request: async () => { throw lowerLevel; },
+      openSealed: async () => null,
+    }),
+    error => error === lowerLevel
+      && error.message === 'Lower-level request diagnostic.'
+      && error.details.source === 'postJson',
+  );
+});
+
 test('Oracle service codes map without treating every 401 as authorization failure', async () => {
   const cases = [
     [401, 'SEAL_EXPIRED', 'DECRYPT_CHALLENGE_EXPIRED'],

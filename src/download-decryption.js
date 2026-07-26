@@ -141,7 +141,8 @@ export async function requestOracleV2Key({
         message,
         clientPublicJwk: keyPair.publicKeyJwk,
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof DownloadError) throw error;
       throw new DownloadError(
         'DECRYPT_SERVICE_UNAVAILABLE',
         'Oracle response was not confirmed. Run the command again to create a fresh keypair, nonce, and signature.',
