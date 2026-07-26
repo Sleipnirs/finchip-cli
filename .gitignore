@@ -1,4 +1,5 @@
 node_modules/
+# npm-shrinkwrap.json is the sole authoritative lockfile for this published CLI.
 package-lock.json
 *.tgz
 .DS_Store

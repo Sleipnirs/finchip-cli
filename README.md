@@ -6,6 +6,8 @@ FinChip Protocol 的 Agent CLI：登录 FinChip 账号、浏览与购买 Chip、
 
 ## 安装
 
+需要 Node.js 22 或更高版本。CLI 启动时会检查实际 Node 版本；低版本即使被 npm 安装成功，也会在加载命令和加密模块前给出明确错误并退出。
+
 ```bash
 npm install -g finchip-cli
 finchip --help
@@ -273,12 +275,19 @@ finchip config unset rpc
 ## 开发验证
 
 ```bash
-npm install
+npm ci --ignore-scripts
 npm test
-npm pack --dry-run
+npm run check:syntax
+npm run check:package
+npm audit --omit=dev --audit-level=high
+git diff --check
 ```
 
-本地测试不会默认执行真实 Site 发布、Oracle grant、下载或链上写入。
+仓库使用随 CLI 发布的 `npm-shrinkwrap.json` 固定开发、CI 和全局安装的依赖树。依赖升级应单独审查并重新通过完整门禁。
+
+GitHub CI 覆盖 Node 22、24、26，以及 Linux、Windows、Windows Git Bash、Apple Silicon macOS 和 Intel macOS。Node 20 只运行不支持版本的启动守卫测试。
+
+本地和 CI 测试不会默认执行真实 Site 发布、Oracle grant、下载或链上写入。
 
 ## Links
 
