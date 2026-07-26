@@ -20,7 +20,13 @@ export function deploymentOptions(options) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(options.addr)) {
     throw new ManageError('SKILL_DEPLOYMENT_MISMATCH', 'Invalid contract address.', 3);
   }
-  return { addr: options.addr.toLowerCase(), chainId: resolveChain(options.chain).id };
+  let chain;
+  try {
+    chain = resolveChain(options.chain);
+  } catch {
+    throw new ManageError('SKILL_DEPLOYMENT_MISMATCH', `Unsupported deployment chain: ${options.chain}.`, 3);
+  }
+  return { addr: options.addr.toLowerCase(), chainId: chain.id };
 }
 
 export function managePath(slug, deployment, extraQuery = null) {

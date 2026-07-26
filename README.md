@@ -155,6 +155,14 @@ finchip skill manage page upload my-skill_finchip \
   --assets-dir ./assets \
   --dry-run
 finchip skill manage page restore my-skill_finchip --kind instruction --yes
+finchip skill manage attest my-skill_finchip \
+  --chain bsc \
+  --addr 0x1111111111111111111111111111111111111111 \
+  --dry-run
+finchip skill manage attest my-skill_finchip \
+  --chain bsc \
+  --addr 0x1111111111111111111111111111111111111111 \
+  --yes
 
 finchip skill price set my-skill_finchip \
   --chain bsc \
@@ -174,6 +182,8 @@ Manage API 只使用 `finchip login` 保存的 Cookie，不发送 viewer signatu
 图片支持 JPG、PNG、WebP、GIF，最大 4 MiB；CLI 会同时校验扩展名和 magic bytes。已有图片的替换需要 `--yes`，首次上传不需要。Site 当前没有单独删除图片的 Manage API，因此 CLI 不提供 image remove。
 
 自定义 instruction、benchmark、showcase 页面由一个 HTML 文件和可选的平铺 assets 目录组成，总计最多 4 MiB。CLI 不递归目录、不跟随 symlink，禁止 JavaScript 资产、`<script>`、root-absolute URL 和嵌套 asset 路径；外部图片 host 最终仍由 Site 的账户 allowlist 判定。覆盖已有页面和 restore 会先清理服务器端资源，因此真实执行需要 `--yes`，网络结果不确定时 CLI 不会自动重试。
+
+Creator Attestation 是独立、一次性且需要 gas 的链上操作，不会自动加入 publish。必须显式提供 `--chain` 和 `--addr`；CLI 会确认 Site 登录钱包、`FINCHIP_PRIVATE_KEY` 钱包和链上 immutable `genesisCreator` 三者一致，再用链上 slug 与 content hash 构造和 Site 相同的 EIP-712 payload。`--dry-run` 只比对本地 digest 与 `creatorAttestationDigest()`，不签名、不广播；真实写入还必须提供 `--yes`。旧合约会返回 `ATTESTATION_UNSUPPORTED`，已经验证的合约幂等返回 `CREATOR_ALREADY_VERIFIED`。
 
 CLI 暂不创建 ERC-721 Chip，但已有 ERC-721 的查询、购买、持仓和二级市场操作继续支持。
 
