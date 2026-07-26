@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
+import { join, win32 } from 'node:path';
 
 import {
   assertAllowedPackageFiles,
@@ -70,7 +70,7 @@ test('package gate requires the bootstrap, CLI body, and published shrinkwrap', 
 
 test('global npm bin path is platform aware', () => {
   assert.equal(installedFinchipBin('/tmp/prefix', 'linux'), join('/tmp/prefix', 'bin', 'finchip'));
-  assert.equal(installedFinchipBin('C:\\prefix', 'win32'), join('C:\\prefix', 'finchip.cmd'));
+  assert.equal(installedFinchipBin('C:\\prefix', 'win32'), win32.join('C:\\prefix', 'finchip.cmd'));
   assert.deepEqual(
     installedFinchipInvocation('C:\\prefix', ['--help'], {
       platform: 'win32',

@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { join, resolve } from 'node:path';
+import { join, resolve, win32 } from 'node:path';
 
 const REQUIRED_PACKAGE_FILES = [
   'LICENSE',
@@ -80,7 +80,7 @@ export function assertAllowedPackageFiles(paths) {
 
 export function installedFinchipBin(prefix, platform = process.platform) {
   return platform === 'win32'
-    ? join(prefix, 'finchip.cmd')
+    ? win32.join(prefix, 'finchip.cmd')
     : join(prefix, 'bin', 'finchip');
 }
 
