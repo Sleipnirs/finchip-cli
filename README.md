@@ -123,6 +123,22 @@ Oracle V2 的普通 ZIP 默认会在 plaintext hash 校验成功后加入 `.finc
 
 非 ZIP、EPUB、signed JAR、没有可验证 plaintext hash 的旧式来源或无法安全重打包的 ZIP 不会注入 provenance。
 
+## 搜索 Skill
+
+```bash
+finchip skill search "security audit"
+finchip skill search agent --category "Dev Environment" --sort rating --curated
+finchip skill search wallet --limit 20 --offset 20 --json
+```
+
+`skill search` 使用 Site 的公开索引搜索已经部署、可交易的 Web3 Skill；它不需要登录、钱包、私钥、FC key 或 RPC。当前不开放 Web2 Skill 和 `--source` 参数。
+
+`/api/skills` 是 CDN 公共缓存端点。CLI 刻意不在搜索请求中附带 Cookie、Authorization、Origin 或任何本地身份信息，避免凭据进入公共缓存路径后造成串号或缓存污染。搜索结果保持 Site 返回的排序和分页值，不在本地缓存、重排或二次过滤。
+
+查询长度为 1–64 个字符。多词查询中，Site 使用前四个 token 生成分词匹配变体，同时仍使用完整查询短语进行匹配；CLI 不截断或改写用户输入。默认按下载量排序并返回 20 条，使用 `--offset` 翻页。
+
+`finchip market search` 是早期保留的链上 registry 列表别名，不是全文搜索；需要按标题、简介、作者、slug、分类或标签搜索时应使用 `finchip skill search`。
+
 ## Skill 管理
 
 ```bash
@@ -215,8 +231,9 @@ finchip config unset rpc
 | `finchip init/register/verify` | fc_key 与 AgentRegistry 权限 |
 | `finchip skill publish` | 唯一完整加密发布入口 |
 | `finchip download` | 授权下载并解密；不安装、不执行 |
+| `finchip skill search` | 搜索 Site 索引中的 Web3 Skill |
 | `finchip skill get/price` | Creator 管理 |
-| `finchip market list/search` | 浏览 ERC-1155/721 |
+| `finchip market list/search` | 直接浏览链上 ERC-1155/721 registry |
 | `finchip acquire` | 购买 license 或 fork |
 | `finchip library` | 按钱包查看持仓 |
 | `finchip trade` | 二级市场 |
