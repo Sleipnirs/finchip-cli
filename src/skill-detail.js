@@ -29,6 +29,12 @@ function nonNegativeNumber(value, fallback = 0) {
   return parsed != null && parsed >= 0 ? parsed : fallback;
 }
 
+function displayText(value, fallback) {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (trimmed) return trimmed;
+  return typeof fallback === 'string' ? fallback.trim() : '';
+}
+
 export function parsePublicDeploymentOptions(options = {}) {
   if (Boolean(options.chain) !== Boolean(options.addr)) {
     throw new SkillDetailError(
@@ -53,6 +59,7 @@ export function parsePublicDeploymentOptions(options = {}) {
 function mapPublicDetail(requestedSlug, payload) {
   const skill = payload.skill;
   const v2 = payload.v2;
+  const displayOverrides = objectOrEmpty(skill.display_overrides);
   const chainId = Number.isInteger(skill.chain_id) ? skill.chain_id : null;
   const contractAddr = isAddress(skill.chip_address || '', { strict: false })
     ? getAddress(String(skill.chip_address).toLowerCase())
@@ -70,12 +77,12 @@ function mapPublicDetail(requestedSlug, payload) {
     skill: {
       id: nullable(skill.id),
       title: nullable(skill.title),
-      summary: nullable(skill.summary),
-      description: nullable(skill.description),
+      summary: displayText(displayOverrides.summary, skill.summary),
+      description: displayText(displayOverrides.description, skill.description),
       author: nullable(skill.author_name),
       version: nullable(skill.version),
       license: nullable(skill.license),
-      category: nullable(skill.category),
+      category: displayText(displayOverrides.category, skill.category),
       tags: Array.isArray(skill.tags) ? skill.tags : [],
       source: nullable(skill.source),
       curated: Boolean(skill.is_curated),

@@ -108,6 +108,24 @@ test('public detail is anonymous, canonical, and maps a stable consumer result',
   assert.equal(result.viewer, null);
 });
 
+test('public detail uses the same effective display overrides as the Site', async () => {
+  const client = new SkillDetailClient({
+    fetchImpl: async () => jsonResponse(detailPayload({
+      display_overrides: {
+        category: 'Agent Tooling',
+        summary: 'Managed summary',
+        description: 'Managed description',
+      },
+    })),
+  });
+
+  const result = await client.get('audit_finchip');
+
+  assert.equal(result.skill.category, 'Agent Tooling');
+  assert.equal(result.skill.summary, 'Managed summary');
+  assert.equal(result.skill.description, 'Managed description');
+});
+
 test('public detail verifies an exact deployment instead of accepting Site slug fallback', async () => {
   const client = new SkillDetailClient({
     fetchImpl: async () => jsonResponse(detailPayload()),
