@@ -1,6 +1,6 @@
 # finchip-cli
 
-FinChip Protocol 的 Agent CLI：登录 FinChip 账号、浏览与购买 Chip、发布加密 Skill、管理价格、查看持仓和使用 A2A/x402 接口。
+FinChip Protocol 的 Agent CLI：登录 FinChip 账号、浏览与购买 Chip、发布和下载加密 Skill、管理价格、查看持仓和使用 A2A/x402 接口。
 
 当前支持 BSC、Base、Ethereum、Arbitrum、Optimism，以及内部测试用的 Arbitrum Sepolia。CLI 可以查询和交易 ERC-1155 与 ERC-721；新建发布目前只创建 ERC-1155。
 
@@ -27,7 +27,7 @@ finchip status --json
 finchip logout
 ```
 
-运行前请把实际钱包私钥放入 `FINCHIP_PRIVATE_KEY` 环境变量。发布和 creator 管理需要登录。链上交易还需要同一个钱包的私钥；浏览 market 等只读命令不需要登录。
+运行前请把实际钱包私钥放入 `FINCHIP_PRIVATE_KEY` 环境变量。发布和 creator 管理需要登录。加密下载需要私钥签署持币验证；明文下载在有效登录 cookie 可完成授权时不强制要求私钥。链上交易还需要同一个钱包的私钥；浏览 market 等只读命令不需要登录。
 
 `fc_key` 仍用于 AgentRegistry 的 Agent 权限流程：
 
@@ -83,6 +83,45 @@ finchip skill publish --resume my-skill --json
 发布恢复状态保存在 `~/.finchip/publish-state.json`，权限仅限当前用户。状态会在广播前保存待提交的完整 encryption tuple；因此 Lit 在 `key_prepared` 或 `key_submitted` 后恢复时会复用 ciphertext，不再次发送 CK。旧状态没有模式时按 `finchip` 解释。
 
 `finchip publish` 仍是隐藏的兼容别名，行为与 `finchip skill publish` 相同。旧的 `finchip prepare` 和独立 `finchip launch` 已禁用；直接调用会返回 `COMMAND_DEPRECATED`，且不会访问网络、钱包或 IPFS。
+
+## 下载与解密
+
+`download` 只保存原始文件或 ZIP，不解压、不安装、不执行：
+
+```bash
+finchip download my-skill_finchip
+finchip download my-skill_finchip --dir ./downloads --json
+finchip download my-skill_finchip \
+  --chain bsc \
+  --addr 0x1111111111111111111111111111111111111111 \
+  --no-provenance
+```
+
+未指定部署时，CLI 从 Site 获取 canonical chain 和 Chip 地址。指定部署时，`--chain` 与 `--addr` 必须一起使用。下载默认拒绝覆盖已有文件；只有显式使用 `--force` 才会覆盖。
+
+CLI 先使用当前 Site session cookie 请求 source manifest；Site 要求额外钱包证明时，再生成一次 `skill_detail_viewer` 签名。Cookie 钱包与 `FINCHIP_PRIVATE_KEY` 钱包不一致会立即停止。授权下载 URL 必须与 `FINCHIP_API_URL` 同源，避免 cookie 或下载 token 被发送给第三方。
+
+支持 Site 当前四种来源：
+
+| Source kind | 校验强度 |
+|---|---|
+| `ipfs_manifest_v1` | 校验链上 manifest hash、encrypted package hash 和解密后的 plaintext hash |
+| `ipfs_encrypted` | 兼容旧式直接 `.enc`；只有 AES-GCM authentication tag，没有独立 expected hash |
+| `ipfs_plain` | 依赖 Site 授权和 HTTPS 传输，不提供链上内容 hash |
+| `github` | 保存 Site 生成的 scoped repository archive，不提供链上内容 hash |
+
+因此四类下载的完整性保证并不相同。JSON 中的 `integrityLevel` 会分别返回 `manifest-and-artifact-hashes`、`aead-only` 或 `transport-only`；没有独立 plaintext hash 时，`verifiedPlaintextSha256` 必须为 `null`。
+
+`FINCHIP_V2`、`LIT_V1` 和 `FINCHIP_V2_ORACLE` 都可按链上 marker 解密。Oracle V2 每次请求生成新的 nonce、签名和不可导出的临时 P-256 私钥；challenge 过期只会用全新材料自动重试一次，同一个签名绝不重发。`SEAL_REPLAY` 被当作安全信号硬停止，而不是普通网络错误。
+
+Oracle V2 的普通 ZIP 默认会在 plaintext hash 校验成功后加入 `.finchip-provenance.json`。这会有意改变落盘文件的字节，因此：
+
+- `verifiedPlaintextSha256` 是注入前、与 manifest 对齐的明文 hash。
+- `outputSha256` 是实际保存文件的 hash。
+- 两者不同不表示文件损坏。
+- `--no-provenance` 会跳过注入，保存字节级原始明文。
+
+非 ZIP、EPUB、signed JAR、没有可验证 plaintext hash 的旧式来源或无法安全重打包的 ZIP 不会注入 provenance。
 
 ## Skill 管理
 
@@ -175,6 +214,7 @@ finchip config unset rpc
 | `finchip login/status/logout` | Site 钱包账号 session |
 | `finchip init/register/verify` | fc_key 与 AgentRegistry 权限 |
 | `finchip skill publish` | 唯一完整加密发布入口 |
+| `finchip download` | 授权下载并解密；不安装、不执行 |
 | `finchip skill get/price` | Creator 管理 |
 | `finchip market list/search` | 浏览 ERC-1155/721 |
 | `finchip acquire` | 购买 license 或 fork |
@@ -191,7 +231,7 @@ npm test
 npm pack --dry-run
 ```
 
-本地测试不会默认执行真实 Site 发布或链上写入。
+本地测试不会默认执行真实 Site 发布、Oracle grant、下载或链上写入。
 
 ## Links
 

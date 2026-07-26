@@ -95,3 +95,25 @@ export function writePrivateTextFile(path, text) {
     if (existsSync(temp)) rmSync(temp, { force: true });
   }
 }
+
+export function writePrivateBinaryFile(path, value, { force = false } = {}) {
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true });
+  if (existsSync(path) && !force) {
+    throw new Error(`Output already exists: ${path}. Use --force to overwrite it.`);
+  }
+  const temp = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+  try {
+    writeFileSync(temp, value, { mode: 0o600, flag: 'wx' });
+    restrictPrivatePath(temp, { reset: false });
+    try {
+      renameSync(temp, path);
+    } catch (error) {
+      if (!force || !existsSync(path) || !['EEXIST', 'EPERM', 'EACCES'].includes(error?.code)) throw error;
+      rmSync(path, { force: true });
+      renameSync(temp, path);
+    }
+  } finally {
+    if (existsSync(temp)) rmSync(temp, { force: true });
+  }
+}

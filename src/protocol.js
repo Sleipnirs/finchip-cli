@@ -244,6 +244,8 @@ export const CHIP_ABI = [
   { type: 'function', name: 'category',     stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'imageURI',     stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'usageLimit',   stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'contentHash',  stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { type: 'function', name: 'sourceUrl',    stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'litDataSet',   stateMutability: 'view', inputs: [], outputs: [{ type: 'bool'    }] },
   { type: 'function', name: 'getLitData',   stateMutability: 'view', inputs: [], outputs: [
     { name: 'ciphertext',        type: 'string' },
@@ -307,6 +309,8 @@ export const CHIP_721_ABI = [
   { type: 'function', name: 'category',   stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'imageURI',   stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'parentChip', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'contentHash', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { type: 'function', name: 'sourceUrl',   stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'litDataSet', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool'    }] },
   { type: 'function', name: 'getLitData', stateMutability: 'view', inputs: [], outputs: [
     { name: 'ciphertext',        type: 'string' },
