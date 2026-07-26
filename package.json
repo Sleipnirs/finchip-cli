@@ -8,7 +8,10 @@
   },
   "scripts": {
     "start": "node bin/finchip.js",
-    "test": "node --test"
+    "test": "node --test",
+    "check:syntax": "node scripts/check-syntax.mjs",
+    "check:package": "node scripts/check-package.mjs",
+    "check:node20-guard": "node scripts/check-node20-guard.mjs"
   },
   "dependencies": {
     "commander": "^12.0.0",
@@ -16,7 +19,7 @@
     "viem": "^2.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "keywords": [
     "finchip",
@@ -41,6 +44,7 @@
   "files": [
     "bin/",
     "src/",
+    "npm-shrinkwrap.json",
     "README.md"
   ],
   "homepage": "https://finchip.ai/a2aentry",

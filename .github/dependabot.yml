@@ -1,0 +1,26 @@
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    target-branch: "preview"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:17"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "preview"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:47"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
