@@ -8,6 +8,11 @@ import { CHIP_ABI, CHIP_721_ABI } from '../protocol.js';
 import { cmdPublish } from './publish.js';
 import { cmdSkillSearch } from './search.js';
 import { cmdSkillShow } from './show.js';
+import {
+  cmdSkillReviewDelete,
+  cmdSkillReviewList,
+  cmdSkillReviewSubmit,
+} from './review.js';
 import { cmdSkillManageApply, cmdSkillManageGet } from './manage.js';
 import {
   cmdSkillManageImageSet,
@@ -69,6 +74,40 @@ export function registerSkillCommands(program) {
     .option('--addr <contract>', 'Deployment contract address')
     .option('--json', 'Emit machine-readable JSON')
     .action(cmdSkillShow);
+
+  const skillReview = skill.command('review').description('Read public reviews or publish a holder-verified review');
+
+  skillReview
+    .command('list <slug>')
+    .description('List public Skill reviews without sending login credentials')
+    .option('--chain <chainId>', 'Deployment chain ID or key')
+    .option('--addr <contract>', 'Deployment contract address')
+    .option('--limit <n>', 'Number of reviews from 1 to 50', '20')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillReviewList);
+
+  skillReview
+    .command('submit <slug>')
+    .description('Publish a review after verifying the logged-in wallet currently holds a license')
+    .option('--operational-independence <score>', 'Operational independence rating from 1 to 5')
+    .option('--output-quality <score>', 'Output quality rating from 1 to 5')
+    .option('--model-compatibility <score>', 'Model compatibility rating from 1 to 5')
+    .option('--body <text>', 'Public review body, 1 to 2000 characters')
+    .option('--video-url <url>', 'Optional YouTube or Vimeo review URL')
+    .option('--chain <chainId>', 'Deployment chain ID or key')
+    .option('--addr <contract>', 'Deployment contract address')
+    .option('--dry-run', 'Verify identity, deployment, and current holding without publishing')
+    .option('--yes', 'Explicitly confirm publishing this public review')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillReviewSubmit);
+
+  skillReview
+    .command('delete <slug>')
+    .description('Delete a review published by the logged-in account')
+    .option('--review-id <id>', 'Review ID returned by submit or list')
+    .option('--yes', 'Explicitly confirm deletion of the public review')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillReviewDelete);
 
   const skillManage = skill.command('manage').description('Manage creator-owned Skill presentation and bindings');
 

@@ -153,6 +153,7 @@ finchip skill show audit-pro-finchip
 finchip acquire --slug audit-pro-finchip --dry-run
 finchip acquire --slug audit-pro-finchip --yes
 finchip download audit-pro-finchip
+finchip skill review list audit-pro-finchip
 ```
 
 `skill show` 调用公开详情 API，不要求登录、钱包、私钥、FC key 或 RPC。该命令被定义为匿名公共视图：即使本机已经执行 `finchip login`，CLI 也不会发送 Cookie、Authorization、Origin 或钱包签名，从而保证结果不依赖本地登录状态，并避免发送不必要的身份凭据。指定部署时，`--chain` 与 `--addr` 必须一起提供：
@@ -175,6 +176,41 @@ Site 有可能在找不到指定部署时回退到同 slug 的 canonical deploym
 - 广播后结果不确定时不会自动重发。`ACQUIRE_RESULT_UNKNOWN` 会带 tx hash，并要求先检查 receipt 或 `library`。
 
 `skill show` 是任何人可用的公开详情；Creator 的完整可编辑状态仍由 `skill manage get` 提供。CLI 不再提供含义模糊的根级 `skill get`。
+
+## Skill 评价与评分
+
+```bash
+finchip skill review list audit-pro-finchip
+finchip skill review list audit-pro-finchip --limit 10 --json
+
+finchip skill review submit audit-pro-finchip \
+  --operational-independence 5 \
+  --output-quality 4 \
+  --model-compatibility 5 \
+  --body "Works reliably in an agent workflow." \
+  --dry-run
+
+finchip skill review submit audit-pro-finchip \
+  --operational-independence 5 \
+  --output-quality 4 \
+  --model-compatibility 5 \
+  --body "Works reliably in an agent workflow." \
+  --yes
+```
+
+`skill review list` 复用匿名公开详情读取已发布评价，不要求登录，也不发送 Cookie、钱包签名或其他身份材料。Site 最多返回最新 50 条；`--limit` 只限制 CLI 展示或 JSON 返回的条数，不会改变 Site 的排序。
+
+提交评价采用“提交时当前持有”规则：
+
+- 必须先 `finchip login`，且该账号需要绑定钱包。
+- 登录钱包必须在所选部署上当前持有 license；ERC-1155 检查 token 1，ERC-721 检查钱包余额。
+- Creator 不能评价自己的 Skill；同一账号对同一 Skill 只能发布一条评价。
+- CLI 会先做链上持仓预检，但 Site 会在写入时再次独立校验；CLI 预检不是授权依据。
+- `--dry-run` 只验证身份、部署和当前持仓；真正公开发布必须显式使用 `--yes`。
+
+用户分别提交 Operational Independence、Output Quality、Model Compatibility 三项 1–5 分。总评分由 Site 取三项平均值生成，不单独接收一个可人为不一致的 overall rating。出售或转出 license 后，既有评价不会自动删除；“verified holder”只表示 Site 在提交当时验证通过。
+
+删除命令为 `finchip skill review delete <slug> --review-id <id> --yes`。删除自己的评价只依据登录账号对该评价的所有权，不要求账号仍然持有 license，也不读取公开详情、链上余额或 RPC。`reviewId` 可从提交结果或 `review list --json` 取得；其他账号的评价会统一返回 `REVIEW_NOT_FOUND_OR_NOT_OWNED`。
 
 ## Skill 管理
 
@@ -299,6 +335,7 @@ finchip config unset rpc
 | `finchip download` | 授权下载并解密；不安装、不执行 |
 | `finchip skill search` | 搜索 Site 索引中的 Web3 Skill |
 | `finchip skill show` | 匿名公开 Skill 详情 |
+| `finchip skill review list/submit/delete` | 读取、提交或删除自己的评价 |
 | `finchip skill manage/price` | Creator 管理 |
 | `finchip market list/search` | 直接浏览链上 ERC-1155/721 registry |
 | `finchip acquire` | 安全预检并显式确认购买 license 或 fork |
