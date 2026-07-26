@@ -8,6 +8,7 @@ import {
 } from '../protocol.js';
 import { resolveChain } from '../chains.js';
 import { canonicalSlug, siteCanonicalSlug } from '../skill-slug.js';
+import { requireExplicitConfirmation } from '../agent-safety.js';
 import { ok, err, inf, hd, sep, fmtAddr, fmtWei, fmtChain, fmtTxLink, c } from '../utils.js';
 
 // ── List active listings ────────────────────────────────────────────────────
@@ -88,13 +89,17 @@ export async function cmdTradeList(options) {
 
   console.log('');
   inf(`${active.length} active listing(s)`);
-  inf(`Buy:    finchip trade buy --id <id> [--qty <qty>]`);
-  inf(`List:   finchip trade sell --slug <slug> --price <price> [--qty <qty>] [--fork]`);
+  inf(`Buy:    finchip trade buy --id <id> [--qty <qty>] --yes`);
+  inf(`List:   finchip trade sell --slug <slug> --price <price> [--qty <qty>] [--fork] --yes`);
   console.log('');
 }
 
 // ── Buy a listing ───────────────────────────────────────────────────────────
 export async function cmdTradeBuy(options) {
+  if (!requireExplicitConfirmation(options, {
+    code: 'TRADE_CONFIRM_REQUIRED',
+    action: 'buy this secondary-market listing',
+  })) return;
   const cfg    = loadConfig();
   const chain  = resolveChain(options.chain || cfg.chain);
   const id     = options.id;
@@ -153,6 +158,10 @@ export async function cmdTradeBuy(options) {
 
 // ── Sell (list a token) ─────────────────────────────────────────────────────
 export async function cmdTradeSell(options) {
+  if (!requireExplicitConfirmation(options, {
+    code: 'TRADE_CONFIRM_REQUIRED',
+    action: 'approve and list this token for sale',
+  })) return;
   const cfg    = loadConfig();
   const chain  = resolveChain(options.chain || cfg.chain);
   const { price, qty } = options;
@@ -250,6 +259,10 @@ export async function cmdTradeSell(options) {
 
 // ── Cancel listing ──────────────────────────────────────────────────────────
 export async function cmdTradeCancel(options) {
+  if (!requireExplicitConfirmation(options, {
+    code: 'TRADE_CONFIRM_REQUIRED',
+    action: 'cancel this secondary-market listing',
+  })) return;
   const cfg    = loadConfig();
   const chain  = resolveChain(options.chain || cfg.chain);
   if (options.id === undefined) { err('--id is required'); process.exit(1); }

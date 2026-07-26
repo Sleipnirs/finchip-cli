@@ -33,9 +33,15 @@ finchip logout
 
 `fc_key` 仍用于 AgentRegistry 的 Agent 权限流程：
 
-从 `https://finchip.ai/a2aentry` 获取实际 fc_key 后运行 `finchip init --key`，再通过 `finchip register --perm full` 注册并用 `finchip verify` 检查。
+从 `https://finchip.ai/a2aentry` 获取实际 fc_key 后运行 `finchip init --key`，再通过 `finchip register --perm full --yes` 注册并用 `finchip verify` 检查。
 
 它不是 `skill publish` 的 Site 登录凭据。
+
+## Agent 安全契约
+
+CLI 把“准备操作”和“授权花钱/广播”分开。会签署付款或广播链上交易的命令必须显式提供 `--yes`；缺少确认时会在外部写入前停止。支持 `--dry-run` 的命令用它完成只读预检，`--yes` 不等于跳过参数、权限、余额、模拟或持仓校验。
+
+`acquire` 还接受可选的 `--max-price` 和 `--max-gas-fee`（均为所选链的原生币数量）。任一链上精确值超过上限都会返回 `ACQUIRE_BUDGET_EXCEEDED`，且不广播。广播结果不确定的现代交易流程会返回 tx hash，不会自动重发。只读命令、登录/登出和普通可回读的 Manage 更新不会为了形式统一而强制增加 `--yes`。
 
 ## 发布加密 Skill
 
@@ -48,7 +54,8 @@ finchip skill publish ./my-skill \
   --description "Agent-ready skill description" \
   --category "Dev Environment" \
   --price 0.01 \
-  --chain bsc
+  --chain bsc \
+  --yes
 ```
 
 新发布必须显式填写 `--category`，避免未填写的内容被静默归入错误分类。`--license`、`--version`、`--royalty-bps` 和 `--max-supply` 有平台默认值。
@@ -79,7 +86,7 @@ finchip skill publish ./my-skill \
   --encrypt oracle-v2 \
   --dry-run --json
 
-finchip skill publish --resume my-skill --json
+finchip skill publish --resume my-skill --yes --json
 ```
 
 目录发布要求目标是 Git 仓库，并遵守 `.gitignore`。CLI 还会强制排除常见凭据、私钥、云服务配置、容器/Kubernetes 认证文件和 Terraform state/variables。Dry run JSON 会返回 `sourceFiles`、`excludedSensitiveFiles` 和实际 `encryptionMode`。
@@ -152,6 +159,7 @@ finchip skill search "security audit"
 finchip skill show audit-pro-finchip
 finchip acquire --slug audit-pro-finchip --dry-run
 finchip acquire --slug audit-pro-finchip --yes
+finchip acquire --slug audit-pro-finchip --max-price 0.01 --max-gas-fee 0.001 --yes
 finchip download audit-pro-finchip
 finchip skill review list audit-pro-finchip
 ```
@@ -172,6 +180,7 @@ Site 有可能在找不到指定部署时回退到同 slug 的 canonical deploym
 - `--dry-run` 完成标准识别、链上价格/供应/持仓/余额读取、模拟和 gas 估算，但不签名、不广播。
 - 不带 `--dry-run` 或 `--yes` 时仍完成只读 preflight，然后返回 `ACQUIRE_CONFIRM_REQUIRED`。
 - `--yes` 才签名并广播；`--dry-run` 与 `--yes` 互斥。
+- `--max-price` 和 `--max-gas-fee` 是可选的 Agent 预算护栏，分别限制链上价格与估算的最大 gas 费用。
 - 已持有时返回 `ACQUIRE_ALREADY_HELD`；只有 `--force --yes` 才会再次购买。
 - 广播后结果不确定时不会自动重发。`ACQUIRE_RESULT_UNKNOWN` 会带 tx hash，并要求先检查 receipt 或 `library`。
 
@@ -238,7 +247,8 @@ finchip skill manage attest my-skill-finchip \
 finchip skill price set my-skill-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
-  --price 0.02
+  --price 0.02 \
+  --yes
 
 finchip skill price sync my-skill-finchip \
   --chain bsc \
@@ -275,10 +285,10 @@ Market 会通过 ERC-165 区分 ERC-1155 与 ERC-721。ERC-721 使用 `forkPrice
 
 ```bash
 finchip trade list --chain bsc
-finchip trade buy --id 1 --chain bsc
-finchip trade sell --slug audit-pro-finchip --price 0.02 --chain bsc
-finchip trade sell --slug forkable-finchip --fork --token-id 7 --price 0.10 --chain bsc
-finchip trade cancel --id 1 --chain bsc
+finchip trade buy --id 1 --chain bsc --yes
+finchip trade sell --slug audit-pro-finchip --price 0.02 --chain bsc --yes
+finchip trade sell --slug forkable-finchip --fork --token-id 7 --price 0.10 --chain bsc --yes
+finchip trade cancel --id 1 --chain bsc --yes
 ```
 
 ## 链与协议检查
@@ -309,6 +319,7 @@ CLI 会读取 Site 发布的 `/.well-known/*`、`/openapi.json` 和 `/api/v1`：
 ```bash
 finchip doctor
 finchip pay https://finchip.ai/api/v1 --dry-run
+finchip pay https://finchip.ai/api/v1 --yes
 ```
 
 `doctor` 检查 endpoint discovery 与链上协议状态；`protocol` 展示具体链的协议地址。`pay` 消费 x402 challenge 并签署 EIP-3009 USDC authorization。

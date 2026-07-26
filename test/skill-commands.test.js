@@ -42,6 +42,7 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   assert.equal(publishHelp.code, 0, publishHelp.stderr);
   assert.match(publishHelp.stdout, /--resume <slug>/);
   assert.match(publishHelp.stdout, /--dry-run/);
+  assert.match(publishHelp.stdout, /--yes/);
   assert.match(publishHelp.stdout, /--encrypt <mode>/);
   assert.match(publishHelp.stdout, /raw CK.*Site.*Lit\/Chipotle/i);
 
@@ -54,6 +55,8 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   assert.match(acquireHelp.stdout, /--addr <contract>/);
   assert.match(acquireHelp.stdout, /--dry-run/);
   assert.match(acquireHelp.stdout, /--yes/);
+  assert.match(acquireHelp.stdout, /--max-price <amount>/);
+  assert.match(acquireHelp.stdout, /--max-gas-fee <amount>/);
   assert.match(acquireHelp.stdout, /--json/);
 
   const home = mkdtempSync(join(tmpdir(), 'finchip-skill-publish-alias-'));

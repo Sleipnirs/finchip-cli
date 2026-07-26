@@ -47,6 +47,7 @@ function configurePublish(command) {
     .option('--max-supply <n>', 'Maximum license supply (0 = unlimited)', '0')
     .option('--chain <chainId>', 'Chain ID or key')
     .option('--dry-run', 'Validate and estimate without uploads or transactions')
+    .option('--yes', 'Explicitly confirm uploads and on-chain transactions')
     .option('--json', 'Emit machine-readable JSON')
     .action(cmdPublish);
 }
@@ -187,6 +188,7 @@ export function registerSkillCommands(program) {
     .option('--addr <contract>', 'Deployment contract address')
     .option('--price <price>', 'New price in native currency')
     .option('--dry-run', 'Validate and estimate without sending a transaction')
+    .option('--yes', 'Explicitly confirm signing and broadcasting the price change')
     .option('--json', 'Emit machine-readable JSON')
     .action(cmdSkillPriceSet);
 
@@ -277,7 +279,10 @@ async function syncPrice(client, slug, deployment, txHash) {
 
 export async function cmdSkillPriceSet(slug, options = {}) {
   try {
-    const managed = await manageGet(slug, options, true);
+    const requestedDeployment = deploymentOptions(options, true);
+    if (options.dryRun && options.yes) {
+      throw new SkillError('PRICE_TX_FAILED', '--dry-run and --yes cannot be used together.', 3);
+    }
     const priceText = String(options.price ?? '');
     if (!/^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/.test(priceText)) {
       throw new SkillError('PRICE_TX_FAILED', 'Price must be a non-negative decimal with up to 18 places.', 3);
@@ -285,6 +290,21 @@ export async function cmdSkillPriceSet(slug, options = {}) {
     let newPrice;
     try { newPrice = parseEther(priceText); }
     catch { throw new SkillError('PRICE_TX_FAILED', 'Price must be a non-negative decimal with up to 18 places.', 3); }
+    if (!options.dryRun && !options.yes) {
+      throw new SkillError(
+        'PRICE_CONFIRM_REQUIRED',
+        'Re-run with --yes to sign and broadcast this price change, or use --dry-run for preflight.',
+        3,
+        {
+          slug,
+          chainId: requestedDeployment.chain.id,
+          contractAddr: requestedDeployment.addr,
+          newPriceWei: newPrice.toString(),
+          confirmationRequired: true,
+        }
+      );
+    }
+    const managed = await manageGet(slug, options, true);
     const cfg = loadConfig();
     const privateKey = resolveConfiguredPrivateKey(cfg);
     if (!privateKey) throw new SkillError('WALLET_MISMATCH', 'Set a valid FINCHIP_PRIVATE_KEY for this operation.', 3);

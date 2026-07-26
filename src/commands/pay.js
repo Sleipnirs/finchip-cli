@@ -13,6 +13,7 @@ import { loadConfig, getPrivateKey } from '../config.js';
 import { getWalletClient } from '../client.js';
 import { probe, selectAccepts, signPayment, retryWithPayment, pay as x402Pay } from '../x402.js';
 import { resolveChain } from '../chains.js';
+import { requireExplicitConfirmation } from '../agent-safety.js';
 import { ok, err, inf, hd, sep, fmtChain, fmtUsdc, c } from '../utils.js';
 
 export async function cmdPay(url, options) {
@@ -20,6 +21,10 @@ export async function cmdPay(url, options) {
     err('Usage: finchip pay <url>');
     process.exit(1);
   }
+  if (!options.dryRun && !requireExplicitConfirmation(options, {
+    code: 'PAYMENT_CONFIRM_REQUIRED',
+    action: 'sign and send this x402 payment',
+  })) return;
   const cfg     = loadConfig();
   const dryRun  = !!options.dryRun;
 
@@ -98,7 +103,7 @@ export async function cmdPay(url, options) {
 
   if (dryRun) {
     inf(`${c.yellow}Dry-run mode — not signing or sending payment.${c.reset}`);
-    inf(`Re-run without --dry-run to actually pay.`);
+    inf(`Re-run with --yes (and without --dry-run) to actually pay.`);
     return;
   }
 

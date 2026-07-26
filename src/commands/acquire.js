@@ -1,4 +1,4 @@
-import { formatEther, isAddress } from 'viem';
+import { formatEther, isAddress, parseEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { loadConfig, resolveConfiguredPrivateKey } from '../config.js';
 import { getPublicClient, getWalletClient } from '../client.js';
@@ -37,6 +37,19 @@ const DEFAULT_DEPENDENCIES = {
   walletClientFactory: getWalletClient,
 };
 
+function parseBudget(value, flag) {
+  if (value == null) return null;
+  const text = String(value);
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/.test(text)) {
+    throw new AcquireError('ACQUIRE_INVALID', `${flag} must be a non-negative native amount with up to 18 places.`, 3);
+  }
+  try {
+    return parseEther(text);
+  } catch {
+    throw new AcquireError('ACQUIRE_INVALID', `${flag} must be a non-negative native amount with up to 18 places.`, 3);
+  }
+}
+
 function validateOptions(options) {
   if (!String(options.slug || '').trim()) {
     throw new AcquireError('ACQUIRE_INVALID', '--slug is required.', 3);
@@ -57,6 +70,10 @@ function validateOptions(options) {
       throw new AcquireError('ACQUIRE_INVALID', `Unsupported deployment chain: ${options.chain}.`, 3);
     }
   }
+  return {
+    maxPriceWei: parseBudget(options.maxPrice, '--max-price'),
+    maxGasFeeWei: parseBudget(options.maxGasFee, '--max-gas-fee'),
+  };
 }
 
 function mapDetailError(error) {
@@ -257,12 +274,27 @@ async function preflight(publicClient, deployment, account, tokenStandard, optio
     capacity: capacity > 0n ? capacity.toString() : null,
     estimatedGas: null,
     estimatedMaxGasFeeWei: null,
+    maxPriceWei: options.maxPriceWei?.toString() ?? null,
+    maxGasFeeWei: options.maxGasFeeWei?.toString() ?? null,
     confirmationRequired: true,
     txHash: null,
     blockNumber: null,
   };
   if (heldBefore > 0n && options.skipIfHeld) {
     return { plan, simulatedRequest: null, heldBefore, result };
+  }
+  if (options.maxPriceWei != null && price > options.maxPriceWei) {
+    throw new AcquireError(
+      'ACQUIRE_BUDGET_EXCEEDED',
+      'The exact on-chain price exceeds --max-price; no transaction was sent.',
+      3,
+      {
+        ...base,
+        budget: 'price',
+        limitWei: options.maxPriceWei.toString(),
+        actualWei: price.toString(),
+      }
+    );
   }
   if (capacity > 0n && issued >= capacity) {
     throw new AcquireError('ACQUIRE_SOLD_OUT', 'This Skill deployment is sold out.', 3, base);
@@ -315,7 +347,21 @@ async function preflight(publicClient, deployment, account, tokenStandard, optio
       throw new AcquireError('RPC_UNAVAILABLE', 'Unable to estimate the purchase transaction fee.', 5, base);
     }
   }
-  const estimatedMaxGasFeeWei = estimatedGas * maxFeePerGas;
+  const broadcastGas = estimatedGas + estimatedGas / GAS_BUFFER_DIVISOR;
+  const estimatedMaxGasFeeWei = broadcastGas * maxFeePerGas;
+  if (options.maxGasFeeWei != null && estimatedMaxGasFeeWei > options.maxGasFeeWei) {
+    throw new AcquireError(
+      'ACQUIRE_BUDGET_EXCEEDED',
+      'The estimated maximum gas fee exceeds --max-gas-fee; no transaction was sent.',
+      3,
+      {
+        ...base,
+        budget: 'gas',
+        limitWei: options.maxGasFeeWei.toString(),
+        actualWei: estimatedMaxGasFeeWei.toString(),
+      }
+    );
+  }
   if (walletBalance < price + estimatedMaxGasFeeWei) {
     throw new AcquireError(
       'INSUFFICIENT_FUNDS',
@@ -343,7 +389,7 @@ async function preflight(publicClient, deployment, account, tokenStandard, optio
 }
 
 export async function acquireSkill(options = {}, providedDependencies = {}) {
-  validateOptions(options);
+  const budgets = validateOptions(options);
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...providedDependencies };
   const deployment = await resolveDeployment(options, dependencies);
   const cfg = dependencies.loadConfig();
@@ -384,6 +430,7 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
   );
   const prepared = await preflight(publicClient, deployment, account, tokenStandard, {
     skipIfHeld: !options.force,
+    ...budgets,
   });
   const preview = prepared.result;
 

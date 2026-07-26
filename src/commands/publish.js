@@ -57,7 +57,25 @@ function fail(options, error) {
 }
 
 function validateOptions(pathArg, options) {
-  if (options.resume) return { slug: canonicalSlug(options.resume) };
+  if (options.dryRun && options.yes) {
+    throw new PublishError('PUBLISH_INVALID', '--dry-run and --yes cannot be used together.', 3, 'validation');
+  }
+  if (options.resume) {
+    const slug = canonicalSlug(options.resume);
+    if (options.dryRun) {
+      throw new PublishError('PUBLISH_INVALID', '--dry-run cannot be used with --resume.', 3, 'validation');
+    }
+    if (!options.yes) {
+      throw new PublishError(
+        'PUBLISH_CONFIRM_REQUIRED',
+        'Re-run with --yes to resume uploads or on-chain transactions.',
+        3,
+        'validation',
+        { resumeSlug: slug, resumable: true, confirmationRequired: true }
+      );
+    }
+    return { slug };
+  }
   if (!pathArg) throw new PublishError('SOURCE_UNSAFE', 'A source file or Git directory is required.', 3, 'validation');
   const slug = canonicalSlug(options.slug);
   if (!options.name?.trim()) throw new PublishError('PUBLISH_INVALID', '--name is required.', 3, 'validation');
@@ -86,6 +104,19 @@ function validateOptions(pathArg, options) {
     throw new PublishError('PUBLISH_INVALID', 'max-supply must be a non-negative safe integer.', 3, 'validation');
   }
   const encryptionMode = normalizeEncryptionMode(options.encrypt);
+  if (!options.dryRun && !options.yes) {
+    throw new PublishError(
+      'PUBLISH_CONFIRM_REQUIRED',
+      'Re-run with --yes to upload and publish, or use --dry-run for preflight.',
+      3,
+      'validation',
+      {
+        slug: siteCanonicalSlug(slug),
+        encryptionMode,
+        confirmationRequired: true,
+      }
+    );
+  }
   return { slug, priceWei, royaltyBps, maxSupply, encryptionMode };
 }
 

@@ -66,6 +66,7 @@ program
   .option('--wallet-type <type>','Wallet type: eoa|aa|multisig', 'eoa')
   .option('--label <label>',     'Optional agent label')
   .option('--chain <chainId>',   'Chain ID or key')
+  .option('--yes',               'Explicitly confirm signing and broadcasting the registration')
   .action(cmdRegister);
 
 program
@@ -116,6 +117,8 @@ program
   .option('--force',               'Allow another purchase when already holding')
   .option('--dry-run',             'Run the complete read-only purchase preflight')
   .option('--yes',                 'Explicitly confirm signing and broadcasting the purchase')
+  .option('--max-price <amount>',  'Refuse when the exact on-chain price exceeds this native amount')
+  .option('--max-gas-fee <amount>','Refuse when the estimated maximum gas fee exceeds this native amount')
   .option('--json',                'Emit machine-readable JSON')
   .action(cmdAcquire);
 
@@ -149,6 +152,7 @@ trade
   .requiredOption('--id <id>', 'Listing ID')
   .option('--qty <qty>',       'Quantity to buy', '1')
   .option('--chain <chainId>', 'Chain ID or key')
+  .option('--yes',             'Explicitly confirm signing and broadcasting the purchase')
   .action(cmdTradeBuy);
 
 trade
@@ -160,6 +164,7 @@ trade
   .option('--token-id <id>',         'Token ID (required for ERC-721)')
   .option('--fork',                  'Force ERC-721 path')
   .option('--chain <chainId>',       'Chain ID or key')
+  .option('--yes',                   'Explicitly confirm approval and listing transactions')
   .action(cmdTradeSell);
 
 trade
@@ -167,6 +172,7 @@ trade
   .description('Cancel an active listing')
   .requiredOption('--id <id>', 'Listing ID')
   .option('--chain <chainId>', 'Chain ID or key')
+  .option('--yes',             'Explicitly confirm signing and broadcasting the cancellation')
   .action(cmdTradeCancel);
 
 // ── Operate · library ────────────────────────────────────────────────────────
@@ -218,6 +224,7 @@ program
   .command('pay <url>')
   .description('Consume an HTTP 402 x402 payment challenge (sign EIP-3009 USDC auth)')
   .option('--dry-run', 'Probe + show payment plan, but do NOT sign or send')
+  .option('--yes', 'Explicitly confirm signing and sending the payment')
   .action(cmdPay);
 
 // ── Help footer ──────────────────────────────────────────────────────────────
@@ -225,7 +232,7 @@ program.addHelpText('after', `
 ${c.gray}Quick start:${c.reset}
   finchip init --key fc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   export FINCHIP_PRIVATE_KEY=0xYOUR_PRIVATE_KEY
-  finchip register --perm full
+  finchip register --perm full --yes
   finchip doctor                       ${c.gray}# full A2A + protocol health check${c.reset}
   finchip market list                  ${c.gray}# browse all chips on default chain${c.reset}
   finchip acquire --slug audit-pro-finchip --dry-run

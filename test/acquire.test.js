@@ -228,3 +228,42 @@ test('acquire validates mutually exclusive and half-pair options before wallet o
   assert.equal(detailCalls, 0);
   assert.equal(keyCalls, 0);
 });
+
+test('acquire enforces optional exact price and gas budgets before broadcast', async () => {
+  const priceLimited = dependencies({ price: 11n });
+  await assert.rejects(
+    () => acquireSkill({ slug: 'audit', yes: true, maxPrice: '0.00000000000000001' }, priceLimited),
+    error => error.code === 'ACQUIRE_BUDGET_EXCEEDED'
+      && error.details.budget === 'price'
+      && error.details.limitWei === '10'
+      && error.details.actualWei === '11'
+  );
+  assert.equal(priceLimited.calls.writes, 0);
+
+  const gasLimited = dependencies();
+  await assert.rejects(
+    () => acquireSkill({ slug: 'audit', yes: true, maxGasFee: '0' }, gasLimited),
+    error => error.code === 'ACQUIRE_BUDGET_EXCEEDED'
+      && error.details.budget === 'gas'
+      && error.details.limitWei === '0'
+      && error.details.actualWei === '50400'
+  );
+  assert.equal(gasLimited.calls.writes, 0);
+});
+
+test('acquire rejects malformed budgets before Site, wallet, or RPC access', async () => {
+  let detailCalls = 0;
+  let keyCalls = 0;
+  const deps = {
+    detailClient: { get: async () => { detailCalls += 1; return detail(); } },
+    loadConfig: () => ({}),
+    resolvePrivateKey: () => { keyCalls += 1; return null; },
+  };
+
+  await assert.rejects(
+    () => acquireSkill({ slug: 'audit', dryRun: true, maxPrice: '-1' }, deps),
+    error => error.code === 'ACQUIRE_INVALID'
+  );
+  assert.equal(detailCalls, 0);
+  assert.equal(keyCalls, 0);
+});
