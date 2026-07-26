@@ -3,7 +3,7 @@
 //
 // Commands:
 //   Bootstrap    — init, verify, register
-//   Operate      — market, acquire, skill publish/manage, trade, library
+//   Operate      — market, acquire, skill publish/manage, download, trade, library
 //   Configure    — config get/set/unset
 //   Inspect      — protocol, chains, doctor
 //   Commerce     — pay (x402 client)
@@ -34,6 +34,7 @@ import { cmdPay }                                           from '../src/command
 import { cmdLogin, cmdStatus, cmdLogout }                    from '../src/commands/auth.js';
 import { registerSkillCommands }                             from '../src/commands/skill.js';
 import { registerDeprecatedPublishCommands }                 from '../src/commands/deprecated.js';
+import { cmdDownload }                                       from '../src/commands/download.js';
 import { c }                                                from '../src/utils.js';
 
 const program = new Command();
@@ -117,6 +118,17 @@ program
 
 registerSkillCommands(program);
 registerDeprecatedPublishCommands(program);
+
+program
+  .command('download <slug>')
+  .description('Download and decrypt a licensed Skill package without installing or executing it')
+  .option('--chain <chainId>', 'Deployment chain ID or key')
+  .option('--addr <contract>', 'Deployment contract address')
+  .option('--dir <directory>', 'Output directory', '.')
+  .option('--force', 'Overwrite an existing output file')
+  .option('--no-provenance', 'Preserve byte-for-byte decrypted content without Oracle provenance injection')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdDownload);
 
 // ── Operate · trade ──────────────────────────────────────────────────────────
 const trade = program.command('trade').description('Secondary market trading');

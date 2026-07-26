@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CHIP_ABI, FACTORY_ABI } from '../src/protocol.js';
+import { CHIP_ABI, CHIP_721_ABI, FACTORY_ABI } from '../src/protocol.js';
 
 function entry(type, name) {
   const item = FACTORY_ABI.find(candidate => candidate.type === type && candidate.name === name);
@@ -30,4 +30,13 @@ test('Chip ABI reads the complete on-chain encryption tuple', () => {
   const getLitData = CHIP_ABI.find(item => item.type === 'function' && item.name === 'getLitData');
   assert.ok(getLitData);
   assert.deepEqual(getLitData.outputs.map(output => output.type), ['string', 'string', 'string']);
+});
+
+test('both Chip ABIs expose on-chain source manifest getters for verified downloads', () => {
+  for (const abi of [CHIP_ABI, CHIP_721_ABI]) {
+    const contentHash = abi.find(item => item.type === 'function' && item.name === 'contentHash');
+    const sourceUrl = abi.find(item => item.type === 'function' && item.name === 'sourceUrl');
+    assert.deepEqual(contentHash?.outputs?.map(output => output.type), ['bytes32']);
+    assert.deepEqual(sourceUrl?.outputs?.map(output => output.type), ['string']);
+  }
 });
