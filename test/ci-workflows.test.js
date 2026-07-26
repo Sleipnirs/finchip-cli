@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 async function repositoryFile(path) {
-  return readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+  const contents = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+  return contents.replace(/\r\n/g, '\n');
 }
 
 test('test workflow covers supported runtimes, macOS architectures, and Git Bash', async () => {
