@@ -13,6 +13,7 @@ import {
   cmdSkillManagePageRestore,
   cmdSkillManagePageUpload,
 } from './manage-assets.js';
+import { cmdSkillManageAttest } from './attest.js';
 import { CliError, emitFailure, emitResult, fmtAddr, fmtChain, hd, inf, ok, sep } from '../utils.js';
 
 const TX_TIMEOUT_MS = 180_000;
@@ -126,6 +127,16 @@ export function registerSkillCommands(program) {
     .option('--yes', 'Confirm removal of the custom page')
     .option('--json', 'Emit machine-readable JSON')
     .action(cmdSkillManagePageRestore);
+
+  skillManage
+    .command('attest <slug>')
+    .description('Sign the one-time on-chain Creator Attestation')
+    .option('--chain <chainId>', 'Exact deployment chain ID or key (required)')
+    .option('--addr <contract>', 'Exact deployment contract address (required)')
+    .option('--dry-run', 'Verify wallets and EIP-712 digest without signing or broadcasting')
+    .option('--yes', 'Confirm the one-time transaction and gas cost')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillManageAttest);
 
   const skillPrice = skill.command('price').description('Manage a Skill deployment price');
 
