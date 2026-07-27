@@ -35,10 +35,18 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   const rootHelp = await runCli(['--help'], {});
   assert.equal(rootHelp.code, 0, rootHelp.stderr);
   assert.match(rootHelp.stdout, /\bskill\b/);
+  assert.match(rootHelp.stdout, /Quick start — consume a Skill/);
+  assert.match(rootHelp.stdout, /finchip skill search "security audit"/);
+  assert.match(rootHelp.stdout, /finchip skill show audit-pro-finchip/);
+  assert.match(rootHelp.stdout, /Agent safety/);
+  assert.match(rootHelp.stdout, /AgentRegistry identity \(advanced\)/);
+  assert.match(rootHelp.stdout, /CLI docs/);
+  assert.doesNotMatch(rootHelp.stdout, /export FINCHIP_PRIVATE_KEY=0xYOUR_PRIVATE_KEY/);
   assert.doesNotMatch(rootHelp.stdout, /^\s+publish(?:\s|\[)/m);
 
   const skillHelp = await runCli(['skill', '--help'], {});
   assert.equal(skillHelp.code, 0, skillHelp.stderr);
+  assert.match(skillHelp.stdout, /Discover, review, publish, and manage FinChip Skills/);
   assert.match(skillHelp.stdout, /publish \[options\] \[path\]/);
   assert.match(skillHelp.stdout, /show \[options\] <slug>/);
   assert.doesNotMatch(skillHelp.stdout, /^\s+get \[options\] <slug>/m);

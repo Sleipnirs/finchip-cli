@@ -53,7 +53,7 @@ function configurePublish(command) {
 }
 
 export function registerSkillCommands(program) {
-  const skill = program.command('skill').description('Publish and manage creator-owned Skills');
+  const skill = program.command('skill').description('Discover, review, publish, and manage FinChip Skills');
 
   configurePublish(skill.command('publish [path]'));
 
