@@ -1,5 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, win32 } from 'node:path';
 
 import {
@@ -9,7 +17,23 @@ import {
   installedFinchipInvocation,
   npmInvocation,
   parseUnsupportedRuntimeError,
+  resolveTrustedNpmCli,
 } from '../scripts/ci-utils.mjs';
+
+function createNpmCliFixture(packageName = 'npm') {
+  const root = mkdtempSync(join(tmpdir(), 'finchip-npm-cli-'));
+  const bin = join(root, 'bin');
+  mkdirSync(bin);
+  const cli = join(bin, 'npm-cli.js');
+  writeFileSync(cli, '#!/usr/bin/env node\n');
+  writeFileSync(join(root, 'package.json'), JSON.stringify({
+    name: packageName,
+    bin: {
+      npm: 'bin/npm-cli.js',
+    },
+  }));
+  return { root, cli };
+}
 
 test('syntax gate discovers every shipped JavaScript subtree', async () => {
   const files = await collectJavaScriptFiles(new URL('..', import.meta.url));
@@ -84,19 +108,36 @@ test('global npm bin path is platform aware', () => {
   );
 });
 
-test('npm scripts invoke the npm CLI through Node instead of spawning npm.cmd', () => {
-  assert.deepEqual(
-    npmInvocation(['pack'], {
-      platform: 'win32',
-      execPath: 'C:\\Node\\node.exe',
-      npmExecPath: 'C:\\Node\\node_modules\\npm\\bin\\npm-cli.js',
-    }),
-    {
-      command: 'C:\\Node\\node.exe',
-      args: ['C:\\Node\\node_modules\\npm\\bin\\npm-cli.js', 'pack'],
-      shell: false,
-    },
-  );
+test('npm scripts invoke a validated npm CLI through Node instead of spawning npm.cmd', (t) => {
+  const fixture = createNpmCliFixture();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  const npmCli = realpathSync(fixture.cli);
+
+  assert.equal(resolveTrustedNpmCli(fixture.cli), npmCli);
+  assert.deepEqual(npmInvocation(['pack'], {
+    platform: 'win32',
+    execPath: 'C:\\Node\\node.exe',
+    npmExecPath: fixture.cli,
+  }), {
+    command: 'C:\\Node\\node.exe',
+    args: [npmCli, 'pack'],
+    shell: false,
+  });
+});
+
+test('npm CLI validation rejects arbitrary JavaScript and impostor packages', (t) => {
+  const arbitraryRoot = mkdtempSync(join(tmpdir(), 'finchip-arbitrary-js-'));
+  const arbitraryScript = join(arbitraryRoot, 'arbitrary.js');
+  writeFileSync(arbitraryScript, 'throw new Error("must not execute");\n');
+  const impostor = createNpmCliFixture('not-npm');
+  t.after(() => {
+    rmSync(arbitraryRoot, { recursive: true, force: true });
+    rmSync(impostor.root, { recursive: true, force: true });
+  });
+
+  assert.throws(() => resolveTrustedNpmCli('relative/npm-cli.js'), /absolute path/);
+  assert.throws(() => resolveTrustedNpmCli(arbitraryScript), /bin[/\\]npm-cli\.js/);
+  assert.throws(() => resolveTrustedNpmCli(impostor.cli), /package named npm/);
 });
 
 test('Node 20 guard parser accepts only the stable unsupported-runtime error', () => {

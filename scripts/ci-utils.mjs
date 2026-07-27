@@ -1,7 +1,19 @@
 import { spawnSync } from 'node:child_process';
+import {
+  readFileSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { join, resolve, win32 } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  resolve,
+  win32,
+} from 'node:path';
 
 const REQUIRED_PACKAGE_FILES = [
   'LICENSE',
@@ -147,6 +159,44 @@ export function npmExecutable(platform = process.platform) {
   return platform === 'win32' ? 'npm.cmd' : 'npm';
 }
 
+export function resolveTrustedNpmCli(value) {
+  if (typeof value !== 'string' || !isAbsolute(value)) {
+    throw new Error('npm_execpath must be an absolute path.');
+  }
+
+  let npmCli;
+  try {
+    npmCli = realpathSync(value);
+  } catch {
+    throw new Error('npm_execpath must resolve to an existing file.');
+  }
+  if (!statSync(npmCli).isFile()) {
+    throw new Error('npm_execpath must resolve to a regular file.');
+  }
+
+  const binDirectory = dirname(npmCli);
+  if (basename(npmCli) !== 'npm-cli.js' || basename(binDirectory) !== 'bin') {
+    throw new Error('npm_execpath must resolve to npm/bin/npm-cli.js.');
+  }
+
+  const packageRoot = dirname(binDirectory);
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
+  } catch {
+    throw new Error('npm_execpath must belong to a readable npm package.');
+  }
+
+  const npmBin = typeof manifest.bin === 'object' && manifest.bin !== null
+    ? manifest.bin.npm
+    : manifest.bin;
+  if (manifest.name !== 'npm' || String(npmBin || '').replaceAll('\\', '/') !== 'bin/npm-cli.js') {
+    throw new Error('npm_execpath must belong to a package named npm with the expected CLI entry.');
+  }
+
+  return npmCli;
+}
+
 export function npmInvocation(args, options = {}) {
   const {
     platform = process.platform,
@@ -155,9 +205,10 @@ export function npmInvocation(args, options = {}) {
   } = options;
 
   if (npmExecPath) {
+    const npmCli = resolveTrustedNpmCli(npmExecPath);
     return {
       command: execPath,
-      args: [npmExecPath, ...args],
+      args: [npmCli, ...args],
       shell: false,
     };
   }

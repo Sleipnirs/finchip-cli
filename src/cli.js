@@ -46,21 +46,21 @@ program
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 program
   .command('init')
-  .description('Bootstrap CLI with your fc_key (saves config + verifies on-chain)')
+  .description('Advanced: bootstrap an AgentRegistry identity with an fc_key')
   .requiredOption('--key <key>', 'fc_key from https://finchip.ai/a2aentry')
   .option('--chain <chainId>', 'Chain ID or key (56|8453|1|42161|10 / bsc|base|ethereum|arbitrum|optimism)', '56')
   .action(cmdInit);
 
 program
   .command('verify')
-  .description('Verify fc_key on-chain + show protocol + V2.5 lock state')
+  .description('Advanced: verify an fc_key and its AgentRegistry state')
   .option('--key <key>',     'fc_key (uses saved config if omitted)')
   .option('--chain <chainId>', 'Chain ID or key')
   .action(cmdVerify);
 
 program
   .command('register')
-  .description('Register fc_key on AgentRegistry (requires wallet)')
+  .description('Advanced: register an fc_key on AgentRegistry (requires wallet)')
   .option('--key <key>',         'fc_key (uses saved config if omitted)')
   .option('--perm <perm>',       'Permission: read|acquire|launch|trade|full|0x0F', 'full')
   .option('--wallet-type <type>','Wallet type: eoa|aa|multisig', 'eoa')
@@ -88,11 +88,11 @@ program
   .action(cmdLogout);
 
 // ── Operate · market ─────────────────────────────────────────────────────────
-const market = program.command('market').description('Browse the chip market');
+const market = program.command('market').description('Browse the legacy chain-scanned chip market');
 
 market
   .command('list')
-  .description('List all chips on a chain')
+  .description('List chips by scanning a chain registry')
   .option('--chain <chainId>', 'Chain ID or key')
   .option('--limit <n>',       'Max chips to show', '20')
   .option('--category <cat>',  'Filter by category')
@@ -100,7 +100,7 @@ market
 
 market
   .command('search')
-  .description('Alias for list with broader default limit')
+  .description('Legacy list alias with a broader default limit')
   .option('--chain <chainId>', 'Chain ID or key')
   .option('--limit <n>',       'Max chips to show', '50')
   .option('--category <cat>',  'Filter by category')
@@ -184,7 +184,7 @@ program
   .action(cmdLibrary);
 
 // ── Configure ────────────────────────────────────────────────────────────────
-const config = program.command('config').description('Manage CLI configuration');
+const config = program.command('config').description('Manage local CLI configuration; prefer environment variables for secrets');
 
 config
   .command('get [key]')
@@ -193,7 +193,7 @@ config
 
 config
   .command('set <key> <value>')
-  .description('Set a config value')
+  .description('Set a config value; prefer FINCHIP_PRIVATE_KEY over persisted privateKey')
   .action(cmdConfigSet);
 
 config
@@ -229,13 +229,24 @@ program
 
 // ── Help footer ──────────────────────────────────────────────────────────────
 program.addHelpText('after', `
-${c.gray}Quick start:${c.reset}
-  finchip init --key fc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-  export FINCHIP_PRIVATE_KEY=0xYOUR_PRIVATE_KEY
-  finchip register --perm full --yes
-  finchip doctor                       ${c.gray}# full A2A + protocol health check${c.reset}
-  finchip market list                  ${c.gray}# browse all chips on default chain${c.reset}
+${c.gray}Quick start — consume a Skill:${c.reset}
+  finchip skill search "security audit"
+  finchip skill show audit-pro-finchip
+  finchip login                        ${c.gray}# requires FINCHIP_PRIVATE_KEY in the process environment${c.reset}
   finchip acquire --slug audit-pro-finchip --dry-run
+  finchip acquire --slug audit-pro-finchip --yes
+  finchip download audit-pro-finchip --json
+
+${c.gray}Agent safety:${c.reset}
+  Use command-level --json for stable machine-readable output where offered.
+  Use --dry-run for read-only preflight; --yes explicitly authorizes a write or transaction.
+  Skill commands that accept --addr require --chain and --addr together.
+  Keep personal and treasury private keys out of persisted CLI config.
+
+${c.gray}AgentRegistry identity (advanced):${c.reset}
+  finchip init --help
+  finchip register --help
+  finchip verify --help
 
 ${c.gray}Chains:${c.reset}
   --chain 56     ${c.gray}or --chain bsc        (BSC Mainnet,    BNB)${c.reset}
@@ -245,9 +256,9 @@ ${c.gray}Chains:${c.reset}
   --chain 10     ${c.gray}or --chain optimism   (Optimism,       ETH)${c.reset}
   --chain 421614 ${c.gray}or --chain arbsepolia (Arb Sepolia,    ETH) — internal testnet${c.reset}
 
-${c.gray}Docs:${c.reset}    https://finchip.ai/a2aentry
-${c.gray}GitHub:${c.reset}  https://github.com/Sleipnirs/finchip-cli
-${c.gray}npm:${c.reset}     https://www.npmjs.com/package/finchip-cli
+${c.gray}CLI docs:${c.reset} https://github.com/Sleipnirs/finchip-cli#readme
+${c.gray}A2A docs:${c.reset} https://finchip.ai/a2aentry
+${c.gray}npm:${c.reset}      https://www.npmjs.com/package/finchip-cli
 `);
 
 program.parse();
