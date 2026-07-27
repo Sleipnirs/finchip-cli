@@ -189,9 +189,9 @@
       }
     },
     "node_modules/viem": {
-      "version": "2.55.7",
-      "resolved": "https://registry.npmjs.org/viem/-/viem-2.55.7.tgz",
-      "integrity": "sha512-1BKaBRlKYjAS9H+9EbDtbuEgDmeJ7QI3Ef2gSTcILqN1vPMLppXA2b66HZSVtDMcoKDISH/X5pKikm+CDm/DbA==",
+      "version": "2.55.8",
+      "resolved": "https://registry.npmjs.org/viem/-/viem-2.55.8.tgz",
+      "integrity": "sha512-BHqtsmK4iMLuLnRyrPIB1jVrmFVliRIP/K0dnFT7gBOpfo8Ko4ozhkzUCRNfR+Z/ZZdnlnVrh04fAOuIm5Svkg==",
       "funding": [
         {
           "type": "github",
@@ -223,7 +223,6 @@
       "resolved": "https://registry.npmjs.org/ws/-/ws-8.21.0.tgz",
       "integrity": "sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==",
       "license": "MIT",
-      "peer": true,
       "engines": {
         "node": ">=10.0.0"
       },
