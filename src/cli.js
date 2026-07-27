@@ -1,11 +1,12 @@
 // FinChip CLI — command registration and execution
 //
 // Commands:
-//   Bootstrap    — init, verify, register
+//   Account      — login, status, logout
 //   Operate      — market, acquire, skill publish/manage, download, trade, library
 //   Configure    — config get/set/unset
 //   Inspect      — protocol, chains, doctor
 //   Commerce     — pay (x402 client)
+//   Advanced     — AgentRegistry identity init, verify, register
 
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
@@ -43,32 +44,7 @@ program
   .description('FinChip Protocol CLI — A2A-native client for on-chain AI skill tokens')
   .version(pkg.version, '-v, --version', 'output the CLI version');
 
-// ── Bootstrap ────────────────────────────────────────────────────────────────
-program
-  .command('init')
-  .description('Advanced: bootstrap an AgentRegistry identity with an fc_key')
-  .requiredOption('--key <key>', 'fc_key from https://finchip.ai/a2aentry')
-  .option('--chain <chainId>', 'Chain ID or key (56|8453|1|42161|10 / bsc|base|ethereum|arbitrum|optimism)', '56')
-  .action(cmdInit);
-
-program
-  .command('verify')
-  .description('Advanced: verify an fc_key and its AgentRegistry state')
-  .option('--key <key>',     'fc_key (uses saved config if omitted)')
-  .option('--chain <chainId>', 'Chain ID or key')
-  .action(cmdVerify);
-
-program
-  .command('register')
-  .description('Advanced: register an fc_key on AgentRegistry (requires wallet)')
-  .option('--key <key>',         'fc_key (uses saved config if omitted)')
-  .option('--perm <perm>',       'Permission: read|acquire|launch|trade|full|0x0F', 'full')
-  .option('--wallet-type <type>','Wallet type: eoa|aa|multisig', 'eoa')
-  .option('--label <label>',     'Optional agent label')
-  .option('--chain <chainId>',   'Chain ID or key')
-  .option('--yes',               'Explicitly confirm signing and broadcasting the registration')
-  .action(cmdRegister);
-
+// ── Account ──────────────────────────────────────────────────────────────────
 program
   .command('login')
   .description('Authenticate a FinChip account by signing with the configured wallet')
@@ -226,6 +202,32 @@ program
   .option('--dry-run', 'Probe + show payment plan, but do NOT sign or send')
   .option('--yes', 'Explicitly confirm signing and sending the payment')
   .action(cmdPay);
+
+// ── Advanced · AgentRegistry identity ────────────────────────────────────────
+program
+  .command('init')
+  .description('Advanced: bootstrap an AgentRegistry identity with an fc_key')
+  .requiredOption('--key <key>', 'fc_key from https://finchip.ai/a2aentry')
+  .option('--chain <chainId>', 'Chain ID or key (56|8453|1|42161|10 / bsc|base|ethereum|arbitrum|optimism)', '56')
+  .action(cmdInit);
+
+program
+  .command('verify')
+  .description('Advanced: verify an fc_key and its AgentRegistry state')
+  .option('--key <key>',     'fc_key (uses saved config if omitted)')
+  .option('--chain <chainId>', 'Chain ID or key')
+  .action(cmdVerify);
+
+program
+  .command('register')
+  .description('Advanced: register an fc_key on AgentRegistry (requires wallet)')
+  .option('--key <key>',         'fc_key (uses saved config if omitted)')
+  .option('--perm <perm>',       'Permission: read|acquire|launch|trade|full|0x0F', 'full')
+  .option('--wallet-type <type>','Wallet type: eoa|aa|multisig', 'eoa')
+  .option('--label <label>',     'Optional agent label')
+  .option('--chain <chainId>',   'Chain ID or key')
+  .option('--yes',               'Explicitly confirm signing and broadcasting the registration')
+  .action(cmdRegister);
 
 // ── Help footer ──────────────────────────────────────────────────────────────
 program.addHelpText('after', `

@@ -43,6 +43,10 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   assert.match(rootHelp.stdout, /CLI docs/);
   assert.doesNotMatch(rootHelp.stdout, /export FINCHIP_PRIVATE_KEY=0xYOUR_PRIVATE_KEY/);
   assert.doesNotMatch(rootHelp.stdout, /^\s+publish(?:\s|\[)/m);
+  assert.ok(
+    rootHelp.stdout.indexOf('login [options]') < rootHelp.stdout.indexOf('init [options]'),
+    'account commands should appear before advanced AgentRegistry commands',
+  );
 
   const skillHelp = await runCli(['skill', '--help'], {});
   assert.equal(skillHelp.code, 0, skillHelp.stderr);
