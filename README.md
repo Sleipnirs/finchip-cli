@@ -21,15 +21,38 @@ npx finchip-cli@latest --help
 
 ## 登录与钱包
 
+钱包 key file 是一个**未加密的明文私钥文件**，不是密码保险箱。请只为 Agent
+创建低余额专用钱包，不要使用个人钱包或 treasury 钱包。CLI 不提供备份或恢复；
+文件丢失就意味着钱包控制权丢失。
+
 CLI 使用配置的钱包在本地签署一次短期挑战，再保存 Site 返回的 session cookie。Cookie 按 `FINCHIP_API_URL` 隔离并写入仅当前用户可读的 `~/.finchip/credentials.json`；命令输出不会包含 cookie、签名或私钥。
 
 ```bash
+finchip wallet create
+finchip wallet status --json
 finchip login
 finchip status --json
 finchip logout
 ```
 
-运行前请把实际钱包私钥放入 `FINCHIP_PRIVATE_KEY` 环境变量。发布和 creator 管理需要登录。加密下载需要私钥签署持币验证；明文下载在有效登录 cookie 可完成授权时不强制要求私钥。链上交易还需要同一个钱包的私钥；浏览 market 等只读命令不需要登录。
+`wallet create` 默认把新钱包写入 `~/.finchip/wallets/agent.key`，使用操作系统的独占创建保证绝不覆盖已有钱包，并把 CLI 自建文件限制为仅当前用户可读。目标已存在时请继续使用原钱包，或显式指定新文件：
+
+```bash
+finchip wallet use --file ~/.finchip/wallets/agent.key
+finchip wallet create --file ~/.finchip/wallets/agent-2.key
+```
+
+`wallet use` 只验证并记录用户提供文件的绝对路径，不复制文件，也不修改该文件或父目录的权限。私钥文件接受带或不带 `0x` 的 64 位十六进制内容。CLI 只把地址、签名和交易发送给 Site，不发送私钥。
+
+钱包解析优先级为 `FINCHIP_PRIVATE_KEY`、`FINCHIP_PRIVATE_KEY_FILE`、config 中经 `wallet use` 验证的 key-file 路径、最后是 legacy `config.privateKey`。前两个变量仅用于临时 Agent/CI runtime；主路径是 key file。历史明文配置可运行：
+
+```bash
+finchip wallet migrate
+```
+
+迁移只是从当前 config 中移除明文，不会安全擦除磁盘历史、编辑器备份、云同步或既往备份。有实际资产的钱包应把旧明文视为可能暴露，并考虑换用新钱包。
+
+发布和 creator 管理需要登录。加密下载需要钱包签署持币验证；明文下载在有效登录 cookie 可完成授权时不强制要求钱包。链上交易还需要同一个钱包；浏览 market 等只读命令不需要登录。
 
 `fc_key` 仍用于 AgentRegistry 的 Agent 权限流程：
 
@@ -110,7 +133,7 @@ finchip download my-skill-finchip \
 
 未指定部署时，CLI 从 Site 获取 canonical chain 和 Chip 地址。指定部署时，`--chain` 与 `--addr` 必须一起使用。下载默认拒绝覆盖已有文件；只有显式使用 `--force` 才会覆盖。
 
-CLI 先使用当前 Site session cookie 请求 source manifest；Site 要求额外钱包证明时，再生成一次 `skill_detail_viewer` 签名。Cookie 钱包与 `FINCHIP_PRIVATE_KEY` 钱包不一致会立即停止。授权下载 URL 必须与 `FINCHIP_API_URL` 同源，避免 cookie 或下载 token 被发送给第三方。
+CLI 先使用当前 Site session cookie 请求 source manifest；Site 要求额外钱包证明时，再生成一次 `skill_detail_viewer` 签名。Cookie 钱包与配置的 Agent 钱包不一致会立即停止。授权下载 URL 必须与 `FINCHIP_API_URL` 同源，避免 cookie 或下载 token 被发送给第三方。
 
 支持 Site 当前四种来源：
 
@@ -264,7 +287,7 @@ Manage API 只使用 `finchip login` 保存的 Cookie，不发送 viewer signatu
 
 自定义 instruction、benchmark、showcase 页面由一个 HTML 文件和可选的平铺 assets 目录组成，总计最多 4 MiB。CLI 不递归目录、不跟随 symlink，禁止 JavaScript 资产、`<script>`、root-absolute URL 和嵌套 asset 路径；外部图片 host 最终仍由 Site 的账户 allowlist 判定。覆盖已有页面和 restore 会先清理服务器端资源，因此真实执行需要 `--yes`，网络结果不确定时 CLI 不会自动重试。
 
-Creator Attestation 是独立、一次性且需要 gas 的链上操作，不会自动加入 publish。必须显式提供 `--chain` 和 `--addr`；CLI 会确认 Site 登录钱包、`FINCHIP_PRIVATE_KEY` 钱包和链上 immutable `genesisCreator` 三者一致，再用链上 slug 与 content hash 构造和 Site 相同的 EIP-712 payload。`--dry-run` 只比对本地 digest 与 `creatorAttestationDigest()`，不签名、不广播；真实写入还必须提供 `--yes`。旧合约会返回 `ATTESTATION_UNSUPPORTED`，已经验证的合约幂等返回 `CREATOR_ALREADY_VERIFIED`。
+Creator Attestation 是独立、一次性且需要 gas 的链上操作，不会自动加入 publish。必须显式提供 `--chain` 和 `--addr`；CLI 会确认 Site 登录钱包、配置的 Agent 钱包和链上 immutable `genesisCreator` 三者一致，再用链上 slug 与 content hash 构造和 Site 相同的 EIP-712 payload。`--dry-run` 只比对本地 digest 与 `creatorAttestationDigest()`，不签名、不广播；真实写入还必须提供 `--yes`。旧合约会返回 `ATTESTATION_UNSUPPORTED`，已经验证的合约幂等返回 `CREATOR_ALREADY_VERIFIED`。
 
 CLI 暂不创建 ERC-721 Chip，但已有 ERC-721 的查询、购买、持仓和二级市场操作继续支持。
 
@@ -345,7 +368,9 @@ finchip config set chain base
 finchip config unset rpc
 ```
 
-优先通过 `FINCHIP_PRIVATE_KEY` 环境变量提供实际私钥，不要把私钥写入脚本或文档。
+钱包使用 `finchip wallet create/use/status/migrate` 管理。`finchip config set privateKey`
+和直接设置 `privateKeyFile` 会被拒绝；后者必须经过 `wallet use` 的格式与地址验证。
+`FINCHIP_PRIVATE_KEY` 与 `FINCHIP_PRIVATE_KEY_FILE` 只保留给临时 Agent/CI runtime。
 
 历史配置中的 `pinataJwt` 不再被发布流程使用，但仍始终作为敏感字段遮罩，避免旧 secret 被 `config get` 输出。
 
@@ -354,6 +379,7 @@ finchip config unset rpc
 | Command | Purpose |
 |---|---|
 | `finchip login/status/logout` | Site 钱包账号 session |
+| `finchip wallet create/use/status/migrate` | Agent 专用 EOA key file |
 | `finchip init/register/verify` | fc_key 与 AgentRegistry 权限 |
 | `finchip skill publish` | 唯一完整加密发布入口 |
 | `finchip download` | 授权下载并解密；不安装、不执行 |

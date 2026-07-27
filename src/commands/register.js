@@ -1,5 +1,5 @@
 // finchip register — write fc_key to AgentRegistry on-chain
-import { loadConfig, getPrivateKey, keyToBytes32, keyToDisplay } from '../config.js';
+import { loadConfig, resolveWalletPrivateKey, keyToBytes32, keyToDisplay } from '../config.js';
 import { getPublicClient, getWalletClient } from '../client.js';
 import { AGENT_REGISTRY, AGENT_REGISTRY_ABI, PERM, WALLET_TYPE } from '../protocol.js';
 import { resolveChain } from '../chains.js';
@@ -56,7 +56,14 @@ export async function cmdRegister(options) {
     process.exit(1);
   }
 
-  const privateKey = getPrivateKey(cfg);
+  let privateKey;
+  try {
+    privateKey = resolveWalletPrivateKey(cfg);
+  } catch (error) {
+    err(`[${error?.code || 'WALLET_KEY_MISSING'}] ${error?.message || 'No Agent wallet is configured.'}`);
+    process.exitCode = error?.exitCode || 3;
+    return;
+  }
   const { client, account } = getWalletClient(chain.id, privateKey, cfg.rpc);
   const pubClient = getPublicClient(chain.id, cfg.rpc);
 

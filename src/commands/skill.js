@@ -1,7 +1,7 @@
 import { formatEther, parseEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { FinchipAuthClient } from '../auth-client.js';
-import { loadConfig, resolveConfiguredPrivateKey } from '../config.js';
+import { loadConfig, resolveWalletPrivateKey } from '../config.js';
 import { getPublicClient, getWalletClient } from '../client.js';
 import { resolveChain } from '../chains.js';
 import { CHIP_ABI, CHIP_721_ABI } from '../protocol.js';
@@ -306,8 +306,7 @@ export async function cmdSkillPriceSet(slug, options = {}) {
     }
     const managed = await manageGet(slug, options, true);
     const cfg = loadConfig();
-    const privateKey = resolveConfiguredPrivateKey(cfg);
-    if (!privateKey) throw new SkillError('WALLET_MISMATCH', 'Set a valid FINCHIP_PRIVATE_KEY for this operation.', 3);
+    const privateKey = resolveWalletPrivateKey(cfg);
     const account = privateKeyToAccount(privateKey);
     const publicClient = getPublicClient(managed.deployment.chain.id, cfg.rpc);
     const tokenType = await resolveTokenType(publicClient, managed.deployment.addr, managed.payload.skill?.token_type);

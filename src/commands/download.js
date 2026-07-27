@@ -4,7 +4,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { FinchipAuthClient } from '../auth-client.js';
 import { resolveChain } from '../chains.js';
 import { getPublicClient } from '../client.js';
-import { loadConfig, resolveConfiguredPrivateKey } from '../config.js';
+import { loadConfig, resolveWalletPrivateKey, WalletKeyError } from '../config.js';
 import {
   downloadPackage,
   fetchIpfsBytes,
@@ -162,7 +162,7 @@ async function processManifest({
   let verifiedPlaintextSha256 = null;
   if (encrypted) {
     if (!account) {
-      throw new DownloadError('AUTH_REQUIRED', 'Encrypted downloads require FINCHIP_PRIVATE_KEY to sign the decrypt request.', 2);
+      throw new DownloadError('AUTH_REQUIRED', 'Encrypted downloads require a configured Agent wallet to sign the decrypt request.', 2);
     }
     let litData;
     try {
@@ -258,7 +258,9 @@ async function processManifest({
 export async function downloadSkill(slug, options = {}, deps = {}) {
   const requested = validateOptions(options);
   const cfg = deps.cfg || loadConfig();
-  const privateKey = deps.privateKey === undefined ? resolveConfiguredPrivateKey(cfg) : deps.privateKey;
+  const privateKey = deps.privateKey === undefined
+    ? resolveWalletPrivateKey(cfg, { required: false })
+    : deps.privateKey;
   const account = deps.account || (privateKey ? privateKeyToAccount(privateKey) : null);
   const client = deps.client || new FinchipAuthClient();
   await validateActiveSession(client, account);
@@ -282,7 +284,7 @@ export async function downloadSkill(slug, options = {}, deps = {}) {
 }
 
 function fail(options, error) {
-  const normalized = error instanceof DownloadError
+  const normalized = error instanceof DownloadError || error instanceof WalletKeyError
     ? error
     : new DownloadError('DOWNLOAD_FAILED', error instanceof Error ? error.message : 'Download failed.');
   emitFailure(options, normalized, { code: 'DOWNLOAD_FAILED' });

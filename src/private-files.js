@@ -1,7 +1,9 @@
 import {
+  closeSync,
   chmodSync,
   existsSync,
   mkdirSync,
+  openSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -93,6 +95,69 @@ export function writePrivateTextFile(path, text) {
     renameSync(temp, path);
   } finally {
     if (existsSync(temp)) rmSync(temp, { force: true });
+  }
+}
+
+export class PrivateFileCreateError extends Error {
+  constructor(message, { path, cleanupRequired = false, cause } = {}) {
+    super(message, cause ? { cause } : undefined);
+    this.name = 'PrivateFileCreateError';
+    this.path = path;
+    this.cleanupRequired = cleanupRequired;
+  }
+}
+
+/**
+ * Create a new private text file without ever replacing an existing target.
+ *
+ * Unlike writePrivateTextFile, this writes directly to the final path with
+ * O_EXCL. A temp-file rename is intentionally unsuitable for wallet keys:
+ * POSIX rename replaces an existing destination and could destroy access to a
+ * funded wallet.
+ */
+export function writeNewPrivateTextFile(path, text, {
+  protectDirectory = true,
+  restrict = restrictPrivatePath,
+  remove = target => rmSync(target, { force: true }),
+} = {}) {
+  const dir = dirname(path);
+  if (protectDirectory) ensurePrivateDirectory(dir);
+  else mkdirSync(dir, { recursive: true, mode: 0o700 });
+
+  let created = false;
+  let descriptor = null;
+  try {
+    descriptor = openSync(path, 'wx', 0o600);
+    created = true;
+    writeFileSync(descriptor, text, { encoding: 'utf8' });
+    closeSync(descriptor);
+    descriptor = null;
+    restrict(path, { reset: false });
+  } catch (error) {
+    if (descriptor !== null) {
+      try {
+        closeSync(descriptor);
+      } catch {
+        // Cleanup below remains the authoritative fail-closed action.
+      }
+      descriptor = null;
+    }
+    // Preserve native EEXIST so callers can distinguish an occupied wallet
+    // path from a storage-hardening failure.
+    if (!created) throw error;
+
+    let cleanupRequired = false;
+    try {
+      remove(path);
+    } catch {
+      cleanupRequired = true;
+    }
+    throw new PrivateFileCreateError(
+      cleanupRequired
+        ? 'Private file hardening failed and the created file could not be removed.'
+        : `Private file hardening failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      { path, cleanupRequired, cause: error },
+    );
   }
 }
 

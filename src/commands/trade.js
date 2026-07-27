@@ -1,5 +1,5 @@
 // finchip trade list / buy / sell / cancel — FinChipMarket V2 client
-import { loadConfig, getPrivateKey } from '../config.js';
+import { loadConfig, resolveWalletPrivateKey } from '../config.js';
 import { resolveProtocol } from '../discovery.js';
 import { getPublicClient, getWalletClient, parseEther } from '../client.js';
 import {
@@ -15,6 +15,16 @@ import {
   verifyTradeListingCreator,
 } from '../trade-preflight.js';
 import { ok, err, inf, hd, sep, fmtAddr, fmtWei, fmtChain, fmtTxLink, c } from '../utils.js';
+
+function walletPrivateKey(cfg) {
+  try {
+    return resolveWalletPrivateKey(cfg);
+  } catch (error) {
+    err(`[${error?.code || 'WALLET_KEY_MISSING'}] ${error?.message || 'No Agent wallet is configured.'}`);
+    process.exitCode = error?.exitCode || 3;
+    return null;
+  }
+}
 
 // ── List active listings ────────────────────────────────────────────────────
 export async function cmdTradeList(options) {
@@ -115,10 +125,11 @@ export async function cmdTradeBuy(options) {
     process.exit(1);
   }
 
+  const privateKey = walletPrivateKey(cfg);
+  if (!privateKey) return;
   const proto = await resolveProtocol(chain.id, cfg.rpc).catch(e => {
     err(`Discovery failed: ${e.shortMessage || e.message}`); process.exit(1);
   });
-  const privateKey = getPrivateKey(cfg);
   const { client: walletClient, account } = getWalletClient(chain.id, privateKey, cfg.rpc);
   const pubClient = getPublicClient(chain.id, cfg.rpc);
 
@@ -176,10 +187,11 @@ export async function cmdTradeSell(options) {
   const slug = siteCanonicalSlug(options.slug);
   const onchainSlug = canonicalSlug(options.slug);
 
+  const privateKey = walletPrivateKey(cfg);
+  if (!privateKey) return;
   const proto = await resolveProtocol(chain.id, cfg.rpc).catch(e => {
     err(`Discovery failed: ${e.shortMessage || e.message}`); process.exit(1);
   });
-  const privateKey = getPrivateKey(cfg);
   const { client: walletClient, account } = getWalletClient(chain.id, privateKey, cfg.rpc);
   const pubClient = getPublicClient(chain.id, cfg.rpc);
 
@@ -308,10 +320,11 @@ export async function cmdTradeCancel(options) {
   const chain  = resolveChain(options.chain || cfg.chain);
   if (options.id === undefined) { err('--id is required'); process.exit(1); }
 
+  const privateKey = walletPrivateKey(cfg);
+  if (!privateKey) return;
   const proto = await resolveProtocol(chain.id, cfg.rpc).catch(e => {
     err(`Discovery failed: ${e.shortMessage || e.message}`); process.exit(1);
   });
-  const privateKey = getPrivateKey(cfg);
   const { client: walletClient } = getWalletClient(chain.id, privateKey, cfg.rpc);
   const pubClient = getPublicClient(chain.id, cfg.rpc);
 

@@ -1,18 +1,11 @@
 import { privateKeyToAccount } from 'viem/accounts';
-import { loadConfig, resolveConfiguredPrivateKey } from '../config.js';
+import { loadConfig, resolveWalletPrivateKey, WalletKeyError } from '../config.js';
 import { FinchipAuthClient, FinchipAuthError } from '../auth-client.js';
 import { emitFailure, emitResult, fmtAddr, hd, inf, ok, sep, wrn } from '../utils.js';
 
 function resolvePrivateKey() {
   const cfg = loadConfig();
-  const privateKey = resolveConfiguredPrivateKey(cfg);
-  if (!privateKey) {
-    throw new FinchipAuthError(
-      'AUTH_SIGNATURE_FAILED',
-      'No valid private key found. Set FINCHIP_PRIVATE_KEY or configure privateKey.',
-      3
-    );
-  }
+  const privateKey = resolveWalletPrivateKey(cfg);
   return { privateKey, chainId: Number(cfg.chain) || 56 };
 }
 
@@ -29,7 +22,7 @@ function accountSummary(session) {
 }
 
 function outputFailure(options, error) {
-  const normalized = error instanceof FinchipAuthError
+  const normalized = error instanceof FinchipAuthError || error instanceof WalletKeyError
     ? error
     : new FinchipAuthError('AUTH_NETWORK_ERROR', error instanceof Error ? error.message : 'Authentication failed.');
   emitFailure(options, normalized, { fields: { authenticated: false } });

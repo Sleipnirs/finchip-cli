@@ -204,7 +204,7 @@ test('acquire forwards an exact pair to public detail and requires a configured 
   };
   await assert.rejects(
     () => acquireSkill({ slug: 'audit', chain: 'bsc', addr: ADDR, dryRun: true }, deps),
-    error => error.code === 'WALLET_REQUIRED'
+    error => error.code === 'WALLET_KEY_MISSING'
       && error.details.chainId === 56
   );
   assert.deepEqual(detailOptions, { chain: 'bsc', addr: ADDR });

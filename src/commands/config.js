@@ -1,7 +1,7 @@
 // finchip config get / set / unset — manage ~/.finchip/config.json
 import { loadConfig, saveConfig, getConfigPath } from '../config.js';
 import { resolveChain } from '../chains.js';
-import { ok, inf, hd, sep, c } from '../utils.js';
+import { CliError, emitFailure, emitResult, err, ok, inf, hd, sep, c } from '../utils.js';
 
 const SENSITIVE_KEYS = new Set(['privateKey', 'pinataJwt']);
 
@@ -34,7 +34,27 @@ export function cmdConfigGet(key) {
   console.log('');
 }
 
-export function cmdConfigSet(key, value) {
+function commandOptions(command) {
+  return typeof command?.opts === 'function' ? command.opts() : command || {};
+}
+
+export function cmdConfigSet(key, value, command) {
+  const options = commandOptions(command);
+  if (key === 'privateKey' || key === 'privateKeyFile') {
+    const error = new CliError(
+      'PRIVATE_KEY_CONFIG_DISABLED',
+      key === 'privateKey'
+        ? 'Raw private keys cannot be stored in config. Run `finchip wallet create` or `finchip wallet use --file <path>`.'
+        : 'Set wallet key files through `finchip wallet use --file <path>` so the file can be validated.',
+      3,
+    );
+    if (options.json) emitFailure(options, error);
+    else {
+      err(`[${error.code}] ${error.message}`);
+      process.exitCode = error.exitCode;
+    }
+    return;
+  }
   const cfg  = loadConfig();
   const prev = cfg[key];
 
@@ -46,32 +66,28 @@ export function cmdConfigSet(key, value) {
       console.error(`${c.red} ✗${c.reset} ${e.message}`);
       process.exit(1);
     }
-  } else if (key === 'privateKey') {
-    let v = value.startsWith('0x') ? value : `0x${value}`;
-    if (v.length !== 66) {
-      console.error(`${c.red} ✗${c.reset} privateKey must be 0x + 64 hex chars`);
-      process.exit(1);
-    }
-    cfg[key] = v;
   } else {
     cfg[key] = value;
   }
 
   saveConfig(cfg);
 
-  if (SENSITIVE_KEYS.has(key)) {
+  if (options.json) {
+    emitResult(options, {
+      ok: true,
+      code: 'CONFIG_UPDATED',
+      key,
+      value: SENSITIVE_KEYS.has(key) ? null : cfg[key],
+    }, () => {});
+  } else if (SENSITIVE_KEYS.has(key)) {
     ok(`${key} updated (stored in ${getConfigPath()})`);
-    if (key === 'privateKey') {
-      console.log(`  ${c.yellow}⚠  For private keys, prefer env vars:${c.reset}`);
-      console.log(`     export FINCHIP_PRIVATE_KEY=0x...`);
-    }
     if (key === 'pinataJwt') {
       console.log(`  ${c.yellow}⚠  pinataJwt is a masked legacy key; skill publish no longer reads it.${c.reset}`);
     }
   } else {
     ok(`${key}: ${prev ?? '(not set)'} → ${cfg[key]}`);
   }
-  console.log('');
+  if (!options.json) console.log('');
 }
 
 export function cmdConfigUnset(key) {
