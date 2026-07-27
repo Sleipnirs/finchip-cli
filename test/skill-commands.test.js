@@ -24,6 +24,13 @@ function runCli(args, env) {
   });
 }
 
+test('CLI rejects excess command arguments instead of silently ignoring them', async () => {
+  const result = await runCli(['chains', 'unexpected'], {});
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /too many arguments/i);
+  assert.equal(result.stdout, '');
+});
+
 test('skill publish is primary and the legacy publish alias remains hidden and compatible', async () => {
   const rootHelp = await runCli(['--help'], {});
   assert.equal(rootHelp.code, 0, rootHelp.stderr);
