@@ -173,7 +173,7 @@ test('skill search help is present while market search remains the legacy list a
 
   const marketHelp = await runCli(['market', 'search', '--help']);
   assert.equal(marketHelp.code, 0, marketHelp.stderr);
-  assert.match(marketHelp.stdout, /Alias for list with broader default limit/);
+  assert.match(marketHelp.stdout, /Legacy list alias with a broader default limit/);
   assert.match(marketHelp.stdout, /--chain <chainId>/);
 });
 

@@ -24,14 +24,33 @@ function runCli(args, env) {
   });
 }
 
+test('CLI rejects excess command arguments instead of silently ignoring them', async () => {
+  const result = await runCli(['chains', 'unexpected'], {});
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /too many arguments/i);
+  assert.equal(result.stdout, '');
+});
+
 test('skill publish is primary and the legacy publish alias remains hidden and compatible', async () => {
   const rootHelp = await runCli(['--help'], {});
   assert.equal(rootHelp.code, 0, rootHelp.stderr);
   assert.match(rootHelp.stdout, /\bskill\b/);
+  assert.match(rootHelp.stdout, /Quick start — consume a Skill/);
+  assert.match(rootHelp.stdout, /finchip skill search "security audit"/);
+  assert.match(rootHelp.stdout, /finchip skill show audit-pro-finchip/);
+  assert.match(rootHelp.stdout, /Agent safety/);
+  assert.match(rootHelp.stdout, /AgentRegistry identity \(advanced\)/);
+  assert.match(rootHelp.stdout, /CLI docs/);
+  assert.doesNotMatch(rootHelp.stdout, /export FINCHIP_PRIVATE_KEY=0xYOUR_PRIVATE_KEY/);
   assert.doesNotMatch(rootHelp.stdout, /^\s+publish(?:\s|\[)/m);
+  assert.ok(
+    rootHelp.stdout.indexOf('login [options]') < rootHelp.stdout.indexOf('init [options]'),
+    'account commands should appear before advanced AgentRegistry commands',
+  );
 
   const skillHelp = await runCli(['skill', '--help'], {});
   assert.equal(skillHelp.code, 0, skillHelp.stderr);
+  assert.match(skillHelp.stdout, /Discover, review, publish, and manage FinChip Skills/);
   assert.match(skillHelp.stdout, /publish \[options\] \[path\]/);
   assert.match(skillHelp.stdout, /show \[options\] <slug>/);
   assert.doesNotMatch(skillHelp.stdout, /^\s+get \[options\] <slug>/m);

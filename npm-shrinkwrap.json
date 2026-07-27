@@ -9,7 +9,7 @@
       "version": "0.3.1",
       "license": "MIT",
       "dependencies": {
-        "commander": "^12.0.0",
+        "commander": "^14.0.3",
         "fflate": "^0.8.3",
         "viem": "^2.0.0"
       },
@@ -123,12 +123,12 @@
       }
     },
     "node_modules/commander": {
-      "version": "12.1.0",
-      "resolved": "https://registry.npmjs.org/commander/-/commander-12.1.0.tgz",
-      "integrity": "sha512-Vw8qHK3bZM9y/P10u3Vib8o/DdkvA2OtPtZvD871QKjy74Wj1WSKFILMPRPSdUSx5RFK1arlJzEtA4PkFgnbuA==",
+      "version": "14.0.3",
+      "resolved": "https://registry.npmjs.org/commander/-/commander-14.0.3.tgz",
+      "integrity": "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==",
       "license": "MIT",
       "engines": {
-        "node": ">=18"
+        "node": ">=20"
       }
     },
     "node_modules/eventemitter3": {
@@ -189,9 +189,9 @@
       }
     },
     "node_modules/viem": {
-      "version": "2.55.7",
-      "resolved": "https://registry.npmjs.org/viem/-/viem-2.55.7.tgz",
-      "integrity": "sha512-1BKaBRlKYjAS9H+9EbDtbuEgDmeJ7QI3Ef2gSTcILqN1vPMLppXA2b66HZSVtDMcoKDISH/X5pKikm+CDm/DbA==",
+      "version": "2.55.8",
+      "resolved": "https://registry.npmjs.org/viem/-/viem-2.55.8.tgz",
+      "integrity": "sha512-BHqtsmK4iMLuLnRyrPIB1jVrmFVliRIP/K0dnFT7gBOpfo8Ko4ozhkzUCRNfR+Z/ZZdnlnVrh04fAOuIm5Svkg==",
       "funding": [
         {
           "type": "github",
@@ -223,7 +223,6 @@
       "resolved": "https://registry.npmjs.org/ws/-/ws-8.21.0.tgz",
       "integrity": "sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==",
       "license": "MIT",
-      "peer": true,
       "engines": {
         "node": ">=10.0.0"
       },
