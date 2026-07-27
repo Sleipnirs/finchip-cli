@@ -7,6 +7,12 @@ import { resolveChain } from '../chains.js';
 import { CHIP_ABI, CHIP_721_ABI } from '../protocol.js';
 import { cmdPublish } from './publish.js';
 import { cmdSkillSearch } from './search.js';
+import { cmdSkillShow } from './show.js';
+import {
+  cmdSkillReviewDelete,
+  cmdSkillReviewList,
+  cmdSkillReviewSubmit,
+} from './review.js';
 import { cmdSkillManageApply, cmdSkillManageGet } from './manage.js';
 import {
   cmdSkillManageImageSet,
@@ -27,7 +33,7 @@ function configurePublish(command) {
   return command
     .description('Publish an encrypted ERC-1155 Skill through the canonical FinChip flow')
     .option('--resume <slug>', 'Resume a previously interrupted publish')
-    .option('--slug <slug>', 'Canonical Skill slug (the _finchip suffix is optional)')
+    .option('--slug <slug>', 'Canonical Skill slug (the -finchip suffix is optional)')
     .option('--name <name>', 'Skill name')
     .option('--description <text>', 'Skill description')
     .option('--price <price>', 'License price in native currency')
@@ -41,6 +47,7 @@ function configurePublish(command) {
     .option('--max-supply <n>', 'Maximum license supply (0 = unlimited)', '0')
     .option('--chain <chainId>', 'Chain ID or key')
     .option('--dry-run', 'Validate and estimate without uploads or transactions')
+    .option('--yes', 'Explicitly confirm uploads and on-chain transactions')
     .option('--json', 'Emit machine-readable JSON')
     .action(cmdPublish);
 }
@@ -62,12 +69,46 @@ export function registerSkillCommands(program) {
     .action(cmdSkillSearch);
 
   skill
-    .command('get <slug>')
-    .description('Show creator management data for a Skill')
+    .command('show <slug>')
+    .description('Show anonymous public details for any FinChip Skill')
     .option('--chain <chainId>', 'Deployment chain ID or key')
     .option('--addr <contract>', 'Deployment contract address')
     .option('--json', 'Emit machine-readable JSON')
-    .action(cmdSkillGet);
+    .action(cmdSkillShow);
+
+  const skillReview = skill.command('review').description('Read public reviews or publish a holder-verified review');
+
+  skillReview
+    .command('list <slug>')
+    .description('List public Skill reviews without sending login credentials')
+    .option('--chain <chainId>', 'Deployment chain ID or key')
+    .option('--addr <contract>', 'Deployment contract address')
+    .option('--limit <n>', 'Number of reviews from 1 to 50', '20')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillReviewList);
+
+  skillReview
+    .command('submit <slug>')
+    .description('Publish a review after verifying the logged-in wallet currently holds a license')
+    .option('--operational-independence <score>', 'Operational independence rating from 1 to 5')
+    .option('--output-quality <score>', 'Output quality rating from 1 to 5')
+    .option('--model-compatibility <score>', 'Model compatibility rating from 1 to 5')
+    .option('--body <text>', 'Public review body, 1 to 2000 characters')
+    .option('--video-url <url>', 'Optional YouTube or Vimeo review URL')
+    .option('--chain <chainId>', 'Deployment chain ID or key')
+    .option('--addr <contract>', 'Deployment contract address')
+    .option('--dry-run', 'Verify identity, deployment, and current holding without publishing')
+    .option('--yes', 'Explicitly confirm publishing this public review')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillReviewSubmit);
+
+  skillReview
+    .command('delete <slug>')
+    .description('Delete a review published by the logged-in account')
+    .option('--review-id <id>', 'Review ID returned by submit or list')
+    .option('--yes', 'Explicitly confirm deletion of the public review')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillReviewDelete);
 
   const skillManage = skill.command('manage').description('Manage creator-owned Skill presentation and bindings');
 
@@ -147,6 +188,7 @@ export function registerSkillCommands(program) {
     .option('--addr <contract>', 'Deployment contract address')
     .option('--price <price>', 'New price in native currency')
     .option('--dry-run', 'Validate and estimate without sending a transaction')
+    .option('--yes', 'Explicitly confirm signing and broadcasting the price change')
     .option('--json', 'Emit machine-readable JSON')
     .action(cmdSkillPriceSet);
 
@@ -197,57 +239,6 @@ async function manageGet(slug, options, requireDeployment = false) {
   return { client, session, deployment, payload };
 }
 
-function summarize(payload) {
-  const skill = payload.skill || {};
-  return {
-    id: skill.id || null,
-    slug: skill.slug || null,
-    title: skill.title || null,
-    description: skill.description || null,
-    category: skill.category || null,
-    isOnChain: Boolean(skill.is_on_chain),
-    contractAddr: skill.chip_address || null,
-    chainId: skill.chain_id ?? null,
-    tokenType: skill.token_type || null,
-    priceWei: skill.price_wei == null ? null : String(skill.price_wei),
-    price: skill.price_wei == null ? null : formatEther(BigInt(skill.price_wei)),
-  };
-}
-
-export async function cmdSkillGet(slug, options = {}) {
-  try {
-    const { payload } = await manageGet(slug, options);
-    const skill = summarize(payload);
-    const deployment = {
-      contractAddr: skill.contractAddr,
-      chainId: skill.chainId,
-      tokenType: skill.tokenType,
-      priceWei: skill.priceWei,
-      price: skill.price,
-    };
-    const binding = {
-      supportedAgentCount: Array.isArray(payload.supportedAgents) ? payload.supportedAgents.length : 0,
-      relatedSkillCount: Array.isArray(payload.relatedSkills) ? payload.relatedSkills.length : 0,
-      hasStudio: Boolean(payload.studio),
-    };
-    const result = { ok: true, code: 'SKILL_FOUND', skill, deployment, binding };
-    emitResult(options, result, () => {
-      hd('FinChip CLI — skill');
-      sep();
-      ok(skill.slug || slug);
-      inf(`title:    ${skill.title || '(not set)'}`);
-      inf(`category: ${skill.category || '(not set)'}`);
-      inf(`chain:    ${skill.chainId == null ? '(not on-chain)' : fmtChain(skill.chainId)}`);
-      inf(`contract: ${skill.contractAddr ? fmtAddr(skill.contractAddr) : '(none)'}`);
-      inf(`type:     ${skill.tokenType || '(unknown)'}`);
-      inf(`price:    ${skill.price ?? '(unknown)'}`);
-      inf(`bindings: ${binding.supportedAgentCount} agents, ${binding.relatedSkillCount} related skills`);
-    });
-  } catch (error) {
-    fail(options, error);
-  }
-}
-
 async function resolveTokenType(publicClient, addr, hint) {
   if (hint === 'erc1155' || hint === 'erc721') return hint;
   try {
@@ -288,7 +279,10 @@ async function syncPrice(client, slug, deployment, txHash) {
 
 export async function cmdSkillPriceSet(slug, options = {}) {
   try {
-    const managed = await manageGet(slug, options, true);
+    const requestedDeployment = deploymentOptions(options, true);
+    if (options.dryRun && options.yes) {
+      throw new SkillError('PRICE_TX_FAILED', '--dry-run and --yes cannot be used together.', 3);
+    }
     const priceText = String(options.price ?? '');
     if (!/^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/.test(priceText)) {
       throw new SkillError('PRICE_TX_FAILED', 'Price must be a non-negative decimal with up to 18 places.', 3);
@@ -296,6 +290,21 @@ export async function cmdSkillPriceSet(slug, options = {}) {
     let newPrice;
     try { newPrice = parseEther(priceText); }
     catch { throw new SkillError('PRICE_TX_FAILED', 'Price must be a non-negative decimal with up to 18 places.', 3); }
+    if (!options.dryRun && !options.yes) {
+      throw new SkillError(
+        'PRICE_CONFIRM_REQUIRED',
+        'Re-run with --yes to sign and broadcast this price change, or use --dry-run for preflight.',
+        3,
+        {
+          slug,
+          chainId: requestedDeployment.chain.id,
+          contractAddr: requestedDeployment.addr,
+          newPriceWei: newPrice.toString(),
+          confirmationRequired: true,
+        }
+      );
+    }
+    const managed = await manageGet(slug, options, true);
     const cfg = loadConfig();
     const privateKey = resolveConfiguredPrivateKey(cfg);
     if (!privateKey) throw new SkillError('WALLET_MISMATCH', 'Set a valid FINCHIP_PRIVATE_KEY for this operation.', 3);

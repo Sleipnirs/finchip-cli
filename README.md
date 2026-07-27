@@ -33,9 +33,15 @@ finchip logout
 
 `fc_key` 仍用于 AgentRegistry 的 Agent 权限流程：
 
-从 `https://finchip.ai/a2aentry` 获取实际 fc_key 后运行 `finchip init --key`，再通过 `finchip register --perm full` 注册并用 `finchip verify` 检查。
+从 `https://finchip.ai/a2aentry` 获取实际 fc_key 后运行 `finchip init --key`，再通过 `finchip register --perm full --yes` 注册并用 `finchip verify` 检查。
 
 它不是 `skill publish` 的 Site 登录凭据。
+
+## Agent 安全契约
+
+CLI 把“准备操作”和“授权花钱/广播”分开。会签署付款或广播链上交易的命令必须显式提供 `--yes`；缺少确认时会在外部写入前停止。支持 `--dry-run` 的命令用它完成只读预检，`--yes` 不等于跳过参数、权限、余额、模拟或持仓校验。
+
+`acquire` 还接受可选的 `--max-price` 和 `--max-gas-fee`（均为所选链的原生币数量）。任一链上精确值超过上限都会返回 `ACQUIRE_BUDGET_EXCEEDED`，且不广播。广播结果不确定的现代交易流程会返回 tx hash，不会自动重发。只读命令、登录/登出和普通可回读的 Manage 更新不会为了形式统一而强制增加 `--yes`。
 
 ## 发布加密 Skill
 
@@ -48,10 +54,13 @@ finchip skill publish ./my-skill \
   --description "Agent-ready skill description" \
   --category "Dev Environment" \
   --price 0.01 \
-  --chain bsc
+  --chain bsc \
+  --yes
 ```
 
 新发布必须显式填写 `--category`，避免未填写的内容被静默归入错误分类。`--license`、`--version`、`--royalty-bps` 和 `--max-supply` 有平台默认值。
+
+CLI 对外统一显示并接受 Site canonical slug，例如 `my-skill-finchip`。现有链上 Registry 的技术 slug 仍是 `my-skill_finchip`；CLI 会在链上查询时自动转换，历史 `_finchip` 输入也继续兼容。Publish JSON 的 `slug` 是 Site canonical slug，`onchainSlug` 用于链上诊断和恢复，不需要用户日常记忆。
 
 ### 加密方式
 
@@ -77,7 +86,7 @@ finchip skill publish ./my-skill \
   --encrypt oracle-v2 \
   --dry-run --json
 
-finchip skill publish --resume my-skill --json
+finchip skill publish --resume my-skill --yes --json
 ```
 
 目录发布要求目标是 Git 仓库，并遵守 `.gitignore`。CLI 还会强制排除常见凭据、私钥、云服务配置、容器/Kubernetes 认证文件和 Terraform state/variables。Dry run JSON 会返回 `sourceFiles`、`excludedSensitiveFiles` 和实际 `encryptionMode`。
@@ -91,9 +100,9 @@ finchip skill publish --resume my-skill --json
 `download` 只保存原始文件或 ZIP，不解压、不安装、不执行：
 
 ```bash
-finchip download my-skill_finchip
-finchip download my-skill_finchip --dir ./downloads --json
-finchip download my-skill_finchip \
+finchip download my-skill-finchip
+finchip download my-skill-finchip --dir ./downloads --json
+finchip download my-skill-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
   --no-provenance
@@ -141,43 +150,113 @@ finchip skill search wallet --limit 20 --offset 20 --json
 
 `finchip market search` 是早期保留的链上 registry 列表别名，不是全文搜索；需要按标题、简介、作者、slug、分类或标签搜索时应使用 `finchip skill search`。
 
+## 查看、购买与下载 Skill
+
+消费者的完整只读到持有流程是：
+
+```bash
+finchip skill search "security audit"
+finchip skill show audit-pro-finchip
+finchip acquire --slug audit-pro-finchip --dry-run
+finchip acquire --slug audit-pro-finchip --yes
+finchip acquire --slug audit-pro-finchip --max-price 0.01 --max-gas-fee 0.001 --yes
+finchip download audit-pro-finchip
+finchip skill review list audit-pro-finchip
+```
+
+`skill show` 调用公开详情 API，不要求登录、钱包、私钥、FC key 或 RPC。该命令被定义为匿名公共视图：即使本机已经执行 `finchip login`，CLI 也不会发送 Cookie、Authorization、Origin 或钱包签名，从而保证结果不依赖本地登录状态，并避免发送不必要的身份凭据。指定部署时，`--chain` 与 `--addr` 必须一起提供：
+
+```bash
+finchip skill show audit-pro-finchip \
+  --chain bsc \
+  --addr 0x1111111111111111111111111111111111111111 \
+  --json
+```
+
+Site 有可能在找不到指定部署时回退到同 slug 的 canonical deployment。CLI 会逐字校验返回的 chain 与 contract，发现回退就返回 `SKILL_DEPLOYMENT_MISMATCH`，不会把另一个部署展示成用户指定的那个。详情中的 `deployment.price` 是 Site 展示值；购买前 `acquire` 始终重新从合约读取精确 `priceWei`。
+
+`acquire` 不再使用配置中的默认链。省略部署时，它从公开详情取得 canonical chain 与 contract；指定时也必须同时传入 `--chain` 和 `--addr`。任何真实交易都要求显式 `--yes`：
+
+- `--dry-run` 完成标准识别、链上价格/供应/持仓/余额读取、模拟和 gas 估算，但不签名、不广播。
+- 不带 `--dry-run` 或 `--yes` 时仍完成只读 preflight，然后返回 `ACQUIRE_CONFIRM_REQUIRED`。
+- `--yes` 才签名并广播；`--dry-run` 与 `--yes` 互斥。
+- `--max-price` 和 `--max-gas-fee` 是可选的 Agent 预算护栏，分别限制链上价格与估算的最大 gas 费用。
+- 已持有时返回 `ACQUIRE_ALREADY_HELD`；只有 `--force --yes` 才会再次购买。
+- 广播后结果不确定时不会自动重发。`ACQUIRE_RESULT_UNKNOWN` 会带 tx hash，并要求先检查 receipt 或 `library`。
+
+`skill show` 是任何人可用的公开详情；Creator 的完整可编辑状态仍由 `skill manage get` 提供。CLI 不再提供含义模糊的根级 `skill get`。
+
+## Skill 评价与评分
+
+```bash
+finchip skill review list audit-pro-finchip
+finchip skill review list audit-pro-finchip --limit 10 --json
+
+finchip skill review submit audit-pro-finchip \
+  --operational-independence 5 \
+  --output-quality 4 \
+  --model-compatibility 5 \
+  --body "Works reliably in an agent workflow." \
+  --dry-run
+
+finchip skill review submit audit-pro-finchip \
+  --operational-independence 5 \
+  --output-quality 4 \
+  --model-compatibility 5 \
+  --body "Works reliably in an agent workflow." \
+  --yes
+```
+
+`skill review list` 复用匿名公开详情读取已发布评价，不要求登录，也不发送 Cookie、钱包签名或其他身份材料。Site 最多返回最新 50 条；`--limit` 只限制 CLI 展示或 JSON 返回的条数，不会改变 Site 的排序。
+
+提交评价采用“提交时当前持有”规则：
+
+- 必须先 `finchip login`，且该账号需要绑定钱包。
+- 登录钱包必须在所选部署上当前持有 license；ERC-1155 检查 token 1，ERC-721 检查钱包余额。
+- Creator 不能评价自己的 Skill；同一账号对同一 Skill 只能发布一条评价。
+- CLI 会先做链上持仓预检，但 Site 会在写入时再次独立校验；CLI 预检不是授权依据。
+- `--dry-run` 只验证身份、部署和当前持仓；真正公开发布必须显式使用 `--yes`。
+
+用户分别提交 Operational Independence、Output Quality、Model Compatibility 三项 1–5 分。总评分由 Site 取三项平均值生成，不单独接收一个可人为不一致的 overall rating。出售或转出 license 后，既有评价不会自动删除；“verified holder”只表示 Site 在提交当时验证通过。
+
+删除命令为 `finchip skill review delete <slug> --review-id <id> --yes`。删除自己的评价只依据登录账号对该评价的所有权，不要求账号仍然持有 license，也不读取公开详情、链上余额或 RPC。`reviewId` 可从提交结果或 `review list --json` 取得；其他账号的评价会统一返回 `REVIEW_NOT_FOUND_OR_NOT_OWNED`。
+
 ## Skill 管理
 
 ```bash
-finchip skill get my-skill_finchip --chain bsc --addr 0x1111111111111111111111111111111111111111
-
-finchip skill manage get my-skill_finchip --json
-finchip skill manage apply my-skill_finchip --file ./manage.json --dry-run
-finchip skill manage apply my-skill_finchip --file ./manage.json
-finchip skill manage image set my-skill_finchip --file ./cover.png --dry-run
-finchip skill manage image set my-skill_finchip --file ./cover.png --yes
-finchip skill manage page upload my-skill_finchip \
+finchip skill manage get my-skill-finchip --json
+finchip skill manage apply my-skill-finchip --file ./manage.json --dry-run
+finchip skill manage apply my-skill-finchip --file ./manage.json
+finchip skill manage image set my-skill-finchip --file ./cover.png --dry-run
+finchip skill manage image set my-skill-finchip --file ./cover.png --yes
+finchip skill manage page upload my-skill-finchip \
   --kind instruction \
   --html ./instruction.html \
   --assets-dir ./assets \
   --dry-run
-finchip skill manage page restore my-skill_finchip --kind instruction --yes
-finchip skill manage attest my-skill_finchip \
+finchip skill manage page restore my-skill-finchip --kind instruction --yes
+finchip skill manage attest my-skill-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
   --dry-run
-finchip skill manage attest my-skill_finchip \
+finchip skill manage attest my-skill-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
   --yes
 
-finchip skill price set my-skill_finchip \
+finchip skill price set my-skill-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
-  --price 0.02
+  --price 0.02 \
+  --yes
 
-finchip skill price sync my-skill_finchip \
+finchip skill price sync my-skill-finchip \
   --chain bsc \
   --addr 0x1111111111111111111111111111111111111111 \
   --tx-hash 0xabababababababababababababababababababababababababababababababab
 ```
 
-`skill get` 保留简要 Creator 状态；`skill manage get` 返回完整状态和可直接编辑的 `editable` JSON。`manage apply` 接受最多 1 MiB 的声明式 JSON，`--file -` 可从 stdin 读取。省略字段保持不变；`supportedAgents` 与 `relatedSkillSlugs` 一旦出现就整体替换，空数组表示清空。可清除字段使用 `null` 或空字符串。
+`skill manage get` 返回完整 Creator 状态和可直接编辑的 `editable` JSON。`manage apply` 接受最多 1 MiB 的声明式 JSON，`--file -` 可从 stdin 读取。省略字段保持不变；`supportedAgents` 与 `relatedSkillSlugs` 一旦出现就整体替换，空数组表示清空。可清除字段使用 `null` 或空字符串。
 
 Manage API 只使用 `finchip login` 保存的 Cookie，不发送 viewer signature、`wallet_addr` 或 FC key。`imagePath` 只能通过后续的图片命令管理：它不会出现在 `editable`，也不会由 `manage apply` 发回 Site。关联 Skill 在 CLI 中使用 slug，发送 PATCH 前会精确解析为 Site 内部 ID；PATCH 后 CLI 会重新读取状态，检查 Agent 与关联 Skill 是否被 Site 原样保存。
 
@@ -194,7 +273,8 @@ CLI 暂不创建 ERC-721 Chip，但已有 ERC-721 的查询、购买、持仓和
 ```bash
 finchip market list --chain bsc
 finchip market search --chain base --category "Dev Environment"
-finchip acquire --slug audit-pro_finchip --chain bsc
+finchip acquire --slug audit-pro-finchip --dry-run
+finchip acquire --slug audit-pro-finchip --chain bsc --addr 0x1111111111111111111111111111111111111111 --yes
 finchip library
 finchip library --chain bsc
 ```
@@ -205,11 +285,24 @@ Market 会通过 ERC-165 区分 ERC-1155 与 ERC-721。ERC-721 使用 `forkPrice
 
 ```bash
 finchip trade list --chain bsc
-finchip trade buy --id 1 --chain bsc
-finchip trade sell --slug audit-pro_finchip --price 0.02 --chain bsc
-finchip trade sell --slug forkable_finchip --fork --token-id 7 --price 0.10 --chain bsc
-finchip trade cancel --id 1 --chain bsc
+finchip trade buy --id 1 --chain bsc --yes
+finchip trade sell --slug audit-pro-finchip --price 0.02 --chain bsc --yes
+finchip trade sell --slug forkable-finchip --fork --token-id 7 --price 0.10 --chain bsc --yes
+finchip trade cancel --id 1 --chain bsc --yes
 ```
+
+`trade sell` 在任何 approval 或 `listToken` 广播前都会调用 Site 的公开
+`/api/v2/trade/listings/preflight`。Site 统一计算
+`availableQuantity = 当前持仓 - 当前卖家的活跃挂单数量`，校验 token standard、
+Market approval，并模拟这次 `listToken`。库存有效但尚未授权时，CLI 才发送
+approval；确认后会再次调用同一预检，再立即提交挂单。预检请求不携带登录
+Cookie、Authorization、FC key 或钱包签名；Site/RPC 不可用或返回的 chain、
+Market、Chip、seller 与本地交易不一致时，CLI 会停止，不退回旧的直连路径。
+Site 返回的 creator 还必须与 CLI 随后读取的链上 `creator()` 一致；实际挂单
+使用链上读取值，避免版税被路由到错误地址。
+
+这是 Site UI 和 CLI 的正常流程安全约束，不是合约级限制：直接调用 Market
+合约仍可绕过它，且预检与交易确认之间仍存在很短的链上状态变化窗口。
 
 ## 链与协议检查
 
@@ -239,6 +332,7 @@ CLI 会读取 Site 发布的 `/.well-known/*`、`/openapi.json` 和 `/api/v1`：
 ```bash
 finchip doctor
 finchip pay https://finchip.ai/api/v1 --dry-run
+finchip pay https://finchip.ai/api/v1 --yes
 ```
 
 `doctor` 检查 endpoint discovery 与链上协议状态；`protocol` 展示具体链的协议地址。`pay` 消费 x402 challenge 并签署 EIP-3009 USDC authorization。
@@ -264,9 +358,11 @@ finchip config unset rpc
 | `finchip skill publish` | 唯一完整加密发布入口 |
 | `finchip download` | 授权下载并解密；不安装、不执行 |
 | `finchip skill search` | 搜索 Site 索引中的 Web3 Skill |
-| `finchip skill get/manage/price` | Creator 管理 |
+| `finchip skill show` | 匿名公开 Skill 详情 |
+| `finchip skill review list/submit/delete` | 读取、提交或删除自己的评价 |
+| `finchip skill manage/price` | Creator 管理 |
 | `finchip market list/search` | 直接浏览链上 ERC-1155/721 registry |
-| `finchip acquire` | 购买 license 或 fork |
+| `finchip acquire` | 安全预检并显式确认购买 license 或 fork |
 | `finchip library` | 按钱包查看持仓 |
 | `finchip trade` | 二级市场 |
 | `finchip chains/protocol/doctor` | 链与 A2A 检查 |

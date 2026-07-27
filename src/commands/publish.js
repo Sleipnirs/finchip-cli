@@ -24,6 +24,7 @@ import {
   savePublishState,
   sealRecoverySecret,
   sha256Hex,
+  siteCanonicalSlug,
 } from '../publish-utils.js';
 import {
   ENCRYPTION_MODES,
@@ -56,7 +57,25 @@ function fail(options, error) {
 }
 
 function validateOptions(pathArg, options) {
-  if (options.resume) return { slug: canonicalSlug(options.resume) };
+  if (options.dryRun && options.yes) {
+    throw new PublishError('PUBLISH_INVALID', '--dry-run and --yes cannot be used together.', 3, 'validation');
+  }
+  if (options.resume) {
+    const slug = canonicalSlug(options.resume);
+    if (options.dryRun) {
+      throw new PublishError('PUBLISH_INVALID', '--dry-run cannot be used with --resume.', 3, 'validation');
+    }
+    if (!options.yes) {
+      throw new PublishError(
+        'PUBLISH_CONFIRM_REQUIRED',
+        'Re-run with --yes to resume uploads or on-chain transactions.',
+        3,
+        'validation',
+        { resumeSlug: slug, resumable: true, confirmationRequired: true }
+      );
+    }
+    return { slug };
+  }
   if (!pathArg) throw new PublishError('SOURCE_UNSAFE', 'A source file or Git directory is required.', 3, 'validation');
   const slug = canonicalSlug(options.slug);
   if (!options.name?.trim()) throw new PublishError('PUBLISH_INVALID', '--name is required.', 3, 'validation');
@@ -85,6 +104,19 @@ function validateOptions(pathArg, options) {
     throw new PublishError('PUBLISH_INVALID', 'max-supply must be a non-negative safe integer.', 3, 'validation');
   }
   const encryptionMode = normalizeEncryptionMode(options.encrypt);
+  if (!options.dryRun && !options.yes) {
+    throw new PublishError(
+      'PUBLISH_CONFIRM_REQUIRED',
+      'Re-run with --yes to upload and publish, or use --dry-run for preflight.',
+      3,
+      'validation',
+      {
+        slug: siteCanonicalSlug(slug),
+        encryptionMode,
+        confirmationRequired: true,
+      }
+    );
+  }
   return { slug, priceWei, royaltyBps, maxSupply, encryptionMode };
 }
 
@@ -199,7 +231,8 @@ function enrichPublishError(error, state) {
       ...(normalized.details || {}),
       encryptionMode: state.mode || 'finchip',
       resumable: true,
-      resumeSlug: state.slug,
+      resumeSlug: siteCanonicalSlug(state.slug),
+      onchainSlug: state.slug,
       txHash: normalized.details?.txHash || state.setLitTxHash || state.deployTxHash,
       deployTxHash: state.deployTxHash,
       ...(state.setLitTxHash ? { setLitTxHash: state.setLitTxHash } : {}),
@@ -406,7 +439,8 @@ async function finishPublish(state, context, contentKey) {
     }).catch(() => null);
     clearPublishState(client.origin, state.slug);
     return {
-      ok: true, code: 'PUBLISH_COMPLETE', stage: 'market_ready', slug: state.slug,
+      ok: true, code: 'PUBLISH_COMPLETE', stage: 'market_ready',
+      slug: siteCanonicalSlug(state.slug), onchainSlug: state.slug,
       chainId: state.chainId, contractAddr: state.contractAddr, txHash: state.deployTxHash,
       setLitTxHash: state.setLitTxHash || null, skillId: state.skillId || null,
       encryptionMode: state.mode,
@@ -482,9 +516,10 @@ async function newPublish(pathArg, options, validated) {
   const balance = await publicClient.getBalance({ address: account.address });
   if (balance === 0n) throw new PublishError('DEPLOY_FAILED', `Wallet has no ${chain.symbol} for gas.`, 3, 'validation');
 
-  const availability = await apiJson(client, `/api/skills/availability?slug=${encodeURIComponent(validated.slug)}`);
+  const publicSlug = siteCanonicalSlug(validated.slug);
+  const availability = await apiJson(client, `/api/skills/availability?slug=${encodeURIComponent(publicSlug)}`);
   if (!availability.response.ok) throw new PublishError('PUBLISH_FAILED', availability.payload.error || 'Slug availability check failed.', 5, 'validation');
-  if (availability.payload.available === false) throw new PublishError('SLUG_TAKEN', `Skill slug ${validated.slug} is already taken.`, 3, 'validation');
+  if (availability.payload.available === false) throw new PublishError('SLUG_TAKEN', `Skill slug ${publicSlug} is already taken.`, 3, 'validation');
 
   const dryArgs = [
     options.name.trim(), validated.slug, 'ipfs://dry-run-metadata', `0x${'0'.repeat(64)}`, 'ipfs://dry-run-source',
@@ -501,7 +536,8 @@ async function newPublish(pathArg, options, validated) {
   }
   if (options.dryRun) {
     return {
-      ok: true, code: 'PUBLISH_DRY_RUN', stage: 'validated', slug: validated.slug, chainId: chain.id,
+      ok: true, code: 'PUBLISH_DRY_RUN', stage: 'validated',
+      slug: publicSlug, onchainSlug: validated.slug, chainId: chain.id,
       encryptionMode: validated.encryptionMode,
       walletAddr: account.address.toLowerCase(), primary: primary.relative, fileCount: source.files.length,
       sourceFiles: source.files.map(file => file.relative),

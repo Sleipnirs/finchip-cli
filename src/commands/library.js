@@ -8,6 +8,7 @@ import {
   CHIP_REGISTRY_ABI, CHIP_ABI, CHIP_721_ABI, IFACE_ID,
 } from '../protocol.js';
 import { listChains, resolveChain } from '../chains.js';
+import { siteCanonicalSlug } from '../skill-slug.js';
 import { ok, err, inf, hd, sep, fmtAddr, fmtWei, c } from '../utils.js';
 
 export function chainsForFilter(chainInput) {
@@ -100,7 +101,7 @@ export async function cmdLibrary(options) {
               client.readContract({ address: addr, abi: CHIP_721_ABI, functionName: 'forkPrice'   }).catch(() => 0n),
             ]);
             if (bal === 0n) return null;
-            return { slug, addr, name, balance: bal, price, kind: 'ERC-721' };
+            return { slug: siteCanonicalSlug(slug), addr, name, balance: bal, price, kind: 'ERC-721' };
           } else {
             const [bal, name, price] = await Promise.all([
               client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'balanceOf', args: [walletAddress, 1n] }).catch(() => 0n),
@@ -108,7 +109,7 @@ export async function cmdLibrary(options) {
               client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'licensePrice'}).catch(() => 0n),
             ]);
             if (bal === 0n) return null;
-            return { slug, addr, name, balance: bal, price, kind: 'ERC-1155' };
+            return { slug: siteCanonicalSlug(slug), addr, name, balance: bal, price, kind: 'ERC-1155' };
           }
         } catch { return null; }
       }));

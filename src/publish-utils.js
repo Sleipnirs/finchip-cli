@@ -11,6 +11,7 @@ import { homedir } from 'os';
 import { basename, dirname, extname, join, resolve } from 'path';
 import { zipSync } from 'fflate';
 import { writePrivateTextFile } from './private-files.js';
+export { canonicalSlug, siteCanonicalSlug } from './skill-slug.js';
 
 export const DEFAULT_CHIP_LOGO_URI = 'ipfs://bafybeiaal47ha2ovfvttgiox4a6xzo4hes4kavjtpuhkrpagud5wjj7yl4';
 export const PRIMARY_MAX_ENCRYPTED_BYTES = 2 * 1024 * 1024;
@@ -59,13 +60,6 @@ const SENSITIVE_PATH_PATTERNS = [
   /(?:^|\/)[^/]+\.tfstate(?:\.backup)?$/i,
   /(?:^|\/)[^/]+\.kubeconfig$/i,
 ];
-
-export function canonicalSlug(value) {
-  const raw = String(value || '').trim().toLowerCase().replace(/_finchip$/, '');
-  const clean = raw.replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
-  if (!clean) throw new Error('Slug is required.');
-  return `${clean}_finchip`;
-}
 
 export function isSensitiveSourcePath(path) {
   const parts = path.split(/[\\/]+/).filter(Boolean);

@@ -3,6 +3,7 @@ import { loadConfig, getPrivateKey, keyToBytes32, keyToDisplay } from '../config
 import { getPublicClient, getWalletClient } from '../client.js';
 import { AGENT_REGISTRY, AGENT_REGISTRY_ABI, PERM, WALLET_TYPE } from '../protocol.js';
 import { resolveChain } from '../chains.js';
+import { requireExplicitConfirmation } from '../agent-safety.js';
 import { ok, err, inf, hd, sep, fmtAddr, fmtChain, fmtTxLink } from '../utils.js';
 
 const PERM_MAP = {
@@ -20,6 +21,10 @@ const WALLET_TYPE_MAP = {
 };
 
 export async function cmdRegister(options) {
+  if (!requireExplicitConfirmation(options, {
+    code: 'REGISTER_CONFIRM_REQUIRED',
+    action: 'register the Agent identity on-chain',
+  })) return;
   const cfg   = loadConfig();
   const chain = resolveChain(options.chain || cfg.chain);
 

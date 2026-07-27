@@ -145,6 +145,8 @@ test('skill search text reports an unknown total when Site returns zero with res
     assert.match(result.stdout, /Agent security audit/);
     assert.match(result.stdout, /total unknown/i);
     assert.doesNotMatch(result.stdout, /total 0/i);
+    assert.match(result.stdout, /finchip skill show audit_finchip/);
+    assert.match(result.stdout, /finchip acquire --slug audit_finchip.*--dry-run/);
 
     const jsonResult = await runCli(['skill', 'search', 'audit', '--json'], {
       FINCHIP_API_URL: `http://127.0.0.1:${address.port}`,
