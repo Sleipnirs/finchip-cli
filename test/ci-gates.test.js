@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -110,15 +111,16 @@ test('global npm bin path is platform aware', () => {
 test('npm scripts invoke a validated npm CLI through Node instead of spawning npm.cmd', (t) => {
   const fixture = createNpmCliFixture();
   t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  const npmCli = realpathSync(fixture.cli);
 
-  assert.equal(resolveTrustedNpmCli(fixture.cli), fixture.cli);
+  assert.equal(resolveTrustedNpmCli(fixture.cli), npmCli);
   assert.deepEqual(npmInvocation(['pack'], {
     platform: 'win32',
     execPath: 'C:\\Node\\node.exe',
     npmExecPath: fixture.cli,
   }), {
     command: 'C:\\Node\\node.exe',
-    args: [fixture.cli, 'pack'],
+    args: [npmCli, 'pack'],
     shell: false,
   });
 });
