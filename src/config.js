@@ -16,8 +16,7 @@ const DEFAULTS = {
   rpc:        null,                  // custom RPC override (optional)
   privateKey: null,                  // ⚠ env var preferred
   label:      null,                  // default label for register
-  // Operational hints:
-  pinataJwt:  null,                  // for `finchip prepare` IPFS uploads
+  pinataJwt:  null,                  // legacy key; retained so old secrets remain masked
 };
 
 export function loadConfig() {
@@ -40,7 +39,7 @@ export function getConfigPath() {
 
 // ── Private-key resolution (env var > config file) ──────────────────────────
 export function getPrivateKey(cfg) {
-  const key = process.env.FINCHIP_PRIVATE_KEY || cfg.privateKey;
+  const key = configuredPrivateKey(cfg);
   if (!key) {
     console.error('');
     console.error(`${c.red} ✗${c.reset} No private key found.`);
@@ -49,12 +48,17 @@ export function getPrivateKey(cfg) {
     console.error('');
     process.exit(1);
   }
-  return key.startsWith('0x') ? key : `0x${key}`;
+  return key;
 }
 
-// ── Pinata JWT resolution ───────────────────────────────────────────────────
-export function getPinataJwt(cfg) {
-  return process.env.PINATA_JWT || cfg.pinataJwt || null;
+export function resolveConfiguredPrivateKey(cfg = loadConfig()) {
+  const privateKey = configuredPrivateKey(cfg);
+  return privateKey && /^0x[0-9a-fA-F]{64}$/.test(privateKey) ? privateKey : null;
+}
+
+function configuredPrivateKey(cfg) {
+  const value = process.env.FINCHIP_PRIVATE_KEY || cfg.privateKey;
+  return value?.startsWith('0x') ? value : value ? `0x${value}` : null;
 }
 
 // ── fc_key format conversion ─────────────────────────────────────────────────

@@ -14,13 +14,15 @@
 
 // ── AgentRegistry addresses (V2.4 / V2.5 sticky) ─────────────────────────────
 // These ARE the only addresses the CLI hardcodes. Verified against on-chain
-// state on 2026-05-16.
+// state on 2026-05-16. Arb Sepolia added 2026-06-17.
 export const AGENT_REGISTRY = {
   56:    '0x649266FBF0b886369414393aD74F150d8a0f2A0f', // BSC
   8453:  '0x0E89f9d579a8449320F1E9De00Be72138C2F16D0', // Base
   1:     '0xbCd5B962b7a56129b0d2ACBF3765647736fA1FA1', // Ethereum
   42161: '0x98D112621AD92bd61B54c648D59fd505E1F400b5', // Arbitrum
   10:    '0x98D112621AD92bd61B54c648D59fd505E1F400b5', // Optimism (= Arb due to nonce parity)
+  // Internal testnet — fresh V2.5 bootstrap deploy (NOT sticky from V1):
+  421614: '0x0d8da793A9062D72D15bc9B34c532B40BB205e84', // Arbitrum Sepolia
 };
 
 // ── Permission bitmask (from AgentRegistry.sol constants) ────────────────────
@@ -192,10 +194,12 @@ export const FACTORY_ABI = [
       { name: 'sourceUrl',       type: 'string'  },
       { name: 'category',        type: 'string'  },
       { name: 'licenseTypeName', type: 'string'  },
+      { name: 'feeModel',        type: 'uint8'   },
       { name: 'forkPrice',       type: 'uint256' },
       { name: 'maxForks',        type: 'uint256' },
       { name: 'royaltyBPS',      type: 'uint96'  },
       { name: 'imageURI',        type: 'string'  },
+      { name: 'usageLimit',      type: 'uint256' },
     ],
     outputs: [{ name: 'chipAddress', type: 'address' }] },
   { type: 'function', name: 'totalChips',     stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
@@ -214,12 +218,16 @@ export const FACTORY_ABI = [
       { name: 'chipContract', type: 'address', indexed: true  },
       { name: 'creator',      type: 'address', indexed: true  },
       { name: 'slug',         type: 'string',  indexed: false },
+      { name: 'feeModel',     type: 'uint8',   indexed: false },
+      { name: 'licensePrice', type: 'uint256', indexed: false },
     ] },
-  { type: 'event', name: 'Chip721DeployedV2',
+  { type: 'event', name: 'ChipDeployedV2_721',
     inputs: [
       { name: 'chipContract', type: 'address', indexed: true  },
       { name: 'creator',      type: 'address', indexed: true  },
       { name: 'slug',         type: 'string',  indexed: false },
+      { name: 'feeModel',     type: 'uint8',   indexed: false },
+      { name: 'forkPrice',    type: 'uint256', indexed: false },
     ] },
 ];
 
@@ -236,7 +244,18 @@ export const CHIP_ABI = [
   { type: 'function', name: 'category',     stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'imageURI',     stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'usageLimit',   stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'contentHash',  stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { type: 'function', name: 'genesisCreator', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'creatorAttestationDigest', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { type: 'function', name: 'creatorSignatureSet', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] },
+  { type: 'function', name: 'isCreatorVerified', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] },
+  { type: 'function', name: 'sourceUrl',    stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'litDataSet',   stateMutability: 'view', inputs: [], outputs: [{ type: 'bool'    }] },
+  { type: 'function', name: 'getLitData',   stateMutability: 'view', inputs: [], outputs: [
+    { name: 'ciphertext',        type: 'string' },
+    { name: 'dataToEncryptHash', type: 'string' },
+    { name: 'chain',             type: 'string' },
+  ] },
   { type: 'function', name: 'supportsInterface', stateMutability: 'view',
     inputs: [{ name: 'interfaceId', type: 'bytes4' }],
     outputs: [{ type: 'bool' }] },
@@ -268,11 +287,18 @@ export const CHIP_ABI = [
   { type: 'function', name: 'setLitData', stateMutability: 'nonpayable',
     inputs: [
       { name: 'ciphertext',        type: 'string' },
-      { name: 'dataToEncryptHash', type: 'bytes32' },
+      { name: 'dataToEncryptHash', type: 'string' },
       { name: 'chain',             type: 'string' },
     ], outputs: [] },
+  { type: 'function', name: 'setCreatorSignature', stateMutability: 'nonpayable',
+    inputs: [{ name: 'signature', type: 'bytes' }], outputs: [] },
 
   // Events
+  { type: 'event', name: 'CreatorSignatureSet',
+    inputs: [
+      { name: 'signer', type: 'address', indexed: true },
+      { name: 'signature', type: 'bytes', indexed: false },
+    ] },
   { type: 'event', name: 'LicensePurchased',
     inputs: [
       { name: 'buyer',     type: 'address', indexed: true  },
@@ -294,7 +320,18 @@ export const CHIP_721_ABI = [
   { type: 'function', name: 'category',   stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'imageURI',   stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'parentChip', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'contentHash', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { type: 'function', name: 'genesisCreator', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'creatorAttestationDigest', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
+  { type: 'function', name: 'creatorSignatureSet', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] },
+  { type: 'function', name: 'isCreatorVerified', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] },
+  { type: 'function', name: 'sourceUrl',   stateMutability: 'view', inputs: [], outputs: [{ type: 'string'  }] },
   { type: 'function', name: 'litDataSet', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool'    }] },
+  { type: 'function', name: 'getLitData', stateMutability: 'view', inputs: [], outputs: [
+    { name: 'ciphertext',        type: 'string' },
+    { name: 'dataToEncryptHash', type: 'string' },
+    { name: 'chain',             type: 'string' },
+  ] },
   { type: 'function', name: 'supportsInterface', stateMutability: 'view',
     inputs: [{ name: 'interfaceId', type: 'bytes4' }],
     outputs: [{ type: 'bool' }] },
@@ -326,11 +363,18 @@ export const CHIP_721_ABI = [
   { type: 'function', name: 'setLitData', stateMutability: 'nonpayable',
     inputs: [
       { name: 'ciphertext',        type: 'string' },
-      { name: 'dataToEncryptHash', type: 'bytes32' },
+      { name: 'dataToEncryptHash', type: 'string' },
       { name: 'chain',             type: 'string' },
     ], outputs: [] },
+  { type: 'function', name: 'setCreatorSignature', stateMutability: 'nonpayable',
+    inputs: [{ name: 'signature', type: 'bytes' }], outputs: [] },
 
   // Events
+  { type: 'event', name: 'CreatorSignatureSet',
+    inputs: [
+      { name: 'signer', type: 'address', indexed: true },
+      { name: 'signature', type: 'bytes', indexed: false },
+    ] },
   { type: 'event', name: 'ForkPurchased',
     inputs: [
       { name: 'buyer',   type: 'address', indexed: true  },

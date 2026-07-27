@@ -1,284 +1,396 @@
 # finchip-cli
 
-**FinChip Protocol CLI — A2A-native client for on-chain AI skill tokens.**
+FinChip Protocol 的 Agent CLI：登录 FinChip 账号、浏览与购买 Chip、发布和下载加密 Skill、管理价格、查看持仓和使用 A2A/x402 接口。
 
-[![npm](https://img.shields.io/npm/v/finchip-cli)](https://www.npmjs.com/package/finchip-cli)
-[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+当前支持 BSC、Base、Ethereum、Arbitrum、Optimism，以及内部测试用的 Arbitrum Sepolia。CLI 可以查询和交易 ERC-1155 与 ERC-721；新建发布目前只创建 ERC-1155。
 
-AI agents acquire, launch, and trade skill tokens on the FinChip Protocol — directly from the terminal, across **5 EVM mainnets**, with full **ERC-1155 + ERC-721 fork** support, **A2A Protocol Stack** integration, and a **Coinbase x402** client built in.
+## 安装
 
----
-
-## What's new in v0.3.0
-
-> v0.2.x was a V2.3-era stub. v0.3.0 is a ground-up rewrite for V2.4/V2.5.
-
-- ✨ **5-chain support** — BSC · Base · Ethereum · Arbitrum · Optimism
-- ✨ **Dynamic discovery** — only AgentRegistry is hardcoded; all other addresses are resolved at runtime via `AgentRegistry.getProtocolExtended()`. Future protocol upgrades require **zero CLI changes**.
-- ✨ **ERC-721 fork chips** — `purchaseFork`, `deployChip721`, fork-aware `prepare`/`acquire`/`launch`/`trade`
-- ✨ **A2A Protocol Stack integration** — CLI reads `finchip.ai/.well-known/*` and `/openapi.json`, mirrors the same 5 services declared in `acp.json`, and ships a working **x402 client** (`finchip pay`) that consumes 402 challenges
-- ✨ **Three new commands** — `doctor` (full health check), `protocol info` (state per chain), `chains` (list all), `library` (cross-chain holdings), `pay` (x402)
-- 🛠 Bug fixes:
-  - `prepare` `require('path')` in ESM → broken in v0.2.x, now uses native ESM import
-  - `launch` event parsing was ASCII-hex of the event *name* → now uses `keccak256(eventSig)` via viem `decodeEventLog`
-  - `trade sell` needed `setApprovalForAll` but it was missing from CHIP_ABI → added
-  - Version mismatch (`bin/finchip.js` said `0.1.0`, package.json said `0.2.0`) → both now read from `package.json`
-
----
-
-## Install
+需要 Node.js 22 或更高版本。CLI 启动时会检查实际 Node 版本；低版本即使被 npm 安装成功，也会在加载命令和加密模块前给出明确错误并退出。
 
 ```bash
-# One-line installer (Linux / macOS) — installs Node 20 LTS if needed
-curl -fsSL https://finchip.ai/install.sh | bash -s -- --key fc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# Windows PowerShell
-$env:FC_KEY="fc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-irm https://finchip.ai/install.ps1 | iex
-
-# npm (cross-platform)
 npm install -g finchip-cli
-# or run without installing
-npx finchip-cli@latest init --key fc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+finchip --help
 ```
 
-Get your `fc_xxxxx` key at **https://finchip.ai/a2aentry**.
-
----
-
-## Quick start
+也可以直接运行：
 
 ```bash
-# 1. Bootstrap with your fc_key
-finchip init --key fc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+npx finchip-cli@latest --help
+```
 
-# 2. Set wallet (env var preferred over saving to disk)
-export FINCHIP_PRIVATE_KEY=0xYOUR_PRIVATE_KEY
+## 登录与钱包
 
-# 3. Register fc_key on-chain (once)
-finchip register --perm full
+CLI 使用配置的钱包在本地签署一次短期挑战，再保存 Site 返回的 session cookie。Cookie 按 `FINCHIP_API_URL` 隔离并写入仅当前用户可读的 `~/.finchip/credentials.json`；命令输出不会包含 cookie、签名或私钥。
 
-# 4. Full health check — confirms 5 chains + A2A endpoints + on-chain state
+```bash
+finchip login
+finchip status --json
+finchip logout
+```
+
+运行前请把实际钱包私钥放入 `FINCHIP_PRIVATE_KEY` 环境变量。发布和 creator 管理需要登录。加密下载需要私钥签署持币验证；明文下载在有效登录 cookie 可完成授权时不强制要求私钥。链上交易还需要同一个钱包的私钥；浏览 market 等只读命令不需要登录。
+
+`fc_key` 仍用于 AgentRegistry 的 Agent 权限流程：
+
+从 `https://finchip.ai/a2aentry` 获取实际 fc_key 后运行 `finchip init --key`，再通过 `finchip register --perm full --yes` 注册并用 `finchip verify` 检查。
+
+它不是 `skill publish` 的 Site 登录凭据。
+
+## Agent 安全契约
+
+CLI 把“准备操作”和“授权花钱/广播”分开。会签署付款或广播链上交易的命令必须显式提供 `--yes`；缺少确认时会在外部写入前停止。支持 `--dry-run` 的命令用它完成只读预检，`--yes` 不等于跳过参数、权限、余额、模拟或持仓校验。
+
+`acquire` 还接受可选的 `--max-price` 和 `--max-gas-fee`（均为所选链的原生币数量）。任一链上精确值超过上限都会返回 `ACQUIRE_BUDGET_EXCEEDED`，且不广播。广播结果不确定的现代交易流程会返回 tx hash，不会自动重发。只读命令、登录/登出和普通可回读的 Manage 更新不会为了形式统一而强制增加 `--yes`。
+
+## 发布加密 Skill
+
+完整发布入口只有：
+
+```bash
+finchip skill publish ./my-skill \
+  --slug my-skill \
+  --name "My Skill" \
+  --description "Agent-ready skill description" \
+  --category "Dev Environment" \
+  --price 0.01 \
+  --chain bsc \
+  --yes
+```
+
+新发布必须显式填写 `--category`，避免未填写的内容被静默归入错误分类。`--license`、`--version`、`--royalty-bps` 和 `--max-supply` 有平台默认值。
+
+CLI 对外统一显示并接受 Site canonical slug，例如 `my-skill-finchip`。现有链上 Registry 的技术 slug 仍是 `my-skill_finchip`；CLI 会在链上查询时自动转换，历史 `_finchip` 输入也继续兼容。Publish JSON 的 `slug` 是 Site canonical slug，`onchainSlug` 用于链上诊断和恢复，不需要用户日常记忆。
+
+### 加密方式
+
+| `--encrypt` | 行为 |
+|---|---|
+| `finchip` | 平台默认；Site 返回派生 KEK，CLI 在本地包裹 CK 的 Base64 文本 |
+| `oracle-v2` | Site 返回 Oracle V2 KEK，CLI 在本地包裹 raw 32-byte CK |
+| `lit` | Site 将 raw CK 的 Base64 形式转交 Lit/Chipotle，取得 Lit envelope |
+
+未写 `--encrypt` 时使用 `finchip`。
+
+安全差异：`finchip` 和 `oracle-v2` 都在 CLI 本地包裹内容密钥；`lit` 必须把 raw CK 的 Base64 表示发送给 FinChip Site，再由 Site 转交 Lit/Chipotle。CLI 会在执行前显示这一提示。由于 Site 尚未显式映射 Arbitrum Sepolia，且该链上的完整 Chipotle 发布/解密流程尚未验证，`421614 + lit` 会在上传前被拒绝。
+
+### Dry run 与恢复
+
+```bash
+finchip skill publish ./my-skill \
+  --slug my-skill \
+  --name "My Skill" \
+  --description "Agent-ready skill description" \
+  --category "Dev Environment" \
+  --price 0.01 \
+  --encrypt oracle-v2 \
+  --dry-run --json
+
+finchip skill publish --resume my-skill --yes --json
+```
+
+目录发布要求目标是 Git 仓库，并遵守 `.gitignore`。CLI 还会强制排除常见凭据、私钥、云服务配置、容器/Kubernetes 认证文件和 Terraform state/variables。Dry run JSON 会返回 `sourceFiles`、`excludedSensitiveFiles` 和实际 `encryptionMode`。
+
+发布恢复状态保存在 `~/.finchip/publish-state.json`，权限仅限当前用户。状态会在广播前保存待提交的完整 encryption tuple；因此 Lit 在 `key_prepared` 或 `key_submitted` 后恢复时会复用 ciphertext，不再次发送 CK。旧状态没有模式时按 `finchip` 解释。
+
+`finchip publish` 仍是隐藏的兼容别名，行为与 `finchip skill publish` 相同。旧的 `finchip prepare` 和独立 `finchip launch` 已禁用；直接调用会返回 `COMMAND_DEPRECATED`，且不会访问网络、钱包或 IPFS。
+
+## 下载与解密
+
+`download` 只保存原始文件或 ZIP，不解压、不安装、不执行：
+
+```bash
+finchip download my-skill-finchip
+finchip download my-skill-finchip --dir ./downloads --json
+finchip download my-skill-finchip \
+  --chain bsc \
+  --addr 0x1111111111111111111111111111111111111111 \
+  --no-provenance
+```
+
+未指定部署时，CLI 从 Site 获取 canonical chain 和 Chip 地址。指定部署时，`--chain` 与 `--addr` 必须一起使用。下载默认拒绝覆盖已有文件；只有显式使用 `--force` 才会覆盖。
+
+CLI 先使用当前 Site session cookie 请求 source manifest；Site 要求额外钱包证明时，再生成一次 `skill_detail_viewer` 签名。Cookie 钱包与 `FINCHIP_PRIVATE_KEY` 钱包不一致会立即停止。授权下载 URL 必须与 `FINCHIP_API_URL` 同源，避免 cookie 或下载 token 被发送给第三方。
+
+支持 Site 当前四种来源：
+
+| Source kind | 校验强度 |
+|---|---|
+| `ipfs_manifest_v1` | 校验链上 manifest hash、encrypted package hash 和解密后的 plaintext hash |
+| `ipfs_encrypted` | 兼容旧式直接 `.enc`；只有 AES-GCM authentication tag，没有独立 expected hash |
+| `ipfs_plain` | 依赖 Site 授权和 HTTPS 传输，不提供链上内容 hash |
+| `github` | 保存 Site 生成的 scoped repository archive，不提供链上内容 hash |
+
+因此四类下载的完整性保证并不相同。JSON 中的 `integrityLevel` 会分别返回 `manifest-and-artifact-hashes`、`aead-only` 或 `transport-only`；没有独立 plaintext hash 时，`verifiedPlaintextSha256` 必须为 `null`。
+
+`FINCHIP_V2`、`LIT_V1` 和 `FINCHIP_V2_ORACLE` 都可按链上 marker 解密。Oracle V2 每次请求生成新的 nonce、签名和不可导出的临时 P-256 私钥；challenge 过期只会用全新材料自动重试一次，同一个签名绝不重发。`SEAL_REPLAY` 被当作安全信号硬停止，而不是普通网络错误。
+
+Oracle V2 的普通 ZIP 默认会在 plaintext hash 校验成功后加入 `.finchip-provenance.json`。这会有意改变落盘文件的字节，因此：
+
+- `verifiedPlaintextSha256` 是注入前、与 manifest 对齐的明文 hash。
+- `outputSha256` 是实际保存文件的 hash。
+- 两者不同不表示文件损坏。
+- `--no-provenance` 会跳过注入，保存字节级原始明文。
+
+非 ZIP、EPUB、signed JAR、没有可验证 plaintext hash 的旧式来源或无法安全重打包的 ZIP 不会注入 provenance。
+
+## 搜索 Skill
+
+```bash
+finchip skill search "security audit"
+finchip skill search agent --category "Dev Environment" --sort rating --curated
+finchip skill search wallet --limit 20 --offset 20 --json
+```
+
+`skill search` 使用 Site 的公开索引搜索已经部署、可交易的 Web3 Skill；它不需要登录、钱包、私钥、FC key 或 RPC。当前不开放 Web2 Skill 和 `--source` 参数。
+
+`/api/skills` 是 CDN 公共缓存端点。CLI 刻意不在搜索请求中附带 Cookie、Authorization、Origin 或任何本地身份信息，避免凭据进入公共缓存路径后造成串号或缓存污染。搜索结果保持 Site 返回的排序和分页值，不在本地缓存、重排或二次过滤。
+
+查询长度为 1–64 个字符。多词查询中，Site 使用前四个 token 生成分词匹配变体，同时仍使用完整查询短语进行匹配；CLI 不截断或改写用户输入。默认按下载量排序并返回 20 条，使用 `--offset` 翻页。
+
+`finchip market search` 是早期保留的链上 registry 列表别名，不是全文搜索；需要按标题、简介、作者、slug、分类或标签搜索时应使用 `finchip skill search`。
+
+## 查看、购买与下载 Skill
+
+消费者的完整只读到持有流程是：
+
+```bash
+finchip skill search "security audit"
+finchip skill show audit-pro-finchip
+finchip acquire --slug audit-pro-finchip --dry-run
+finchip acquire --slug audit-pro-finchip --yes
+finchip acquire --slug audit-pro-finchip --max-price 0.01 --max-gas-fee 0.001 --yes
+finchip download audit-pro-finchip
+finchip skill review list audit-pro-finchip
+```
+
+`skill show` 调用公开详情 API，不要求登录、钱包、私钥、FC key 或 RPC。该命令被定义为匿名公共视图：即使本机已经执行 `finchip login`，CLI 也不会发送 Cookie、Authorization、Origin 或钱包签名，从而保证结果不依赖本地登录状态，并避免发送不必要的身份凭据。指定部署时，`--chain` 与 `--addr` 必须一起提供：
+
+```bash
+finchip skill show audit-pro-finchip \
+  --chain bsc \
+  --addr 0x1111111111111111111111111111111111111111 \
+  --json
+```
+
+Site 有可能在找不到指定部署时回退到同 slug 的 canonical deployment。CLI 会逐字校验返回的 chain 与 contract，发现回退就返回 `SKILL_DEPLOYMENT_MISMATCH`，不会把另一个部署展示成用户指定的那个。详情中的 `deployment.price` 是 Site 展示值；购买前 `acquire` 始终重新从合约读取精确 `priceWei`。
+
+`acquire` 不再使用配置中的默认链。省略部署时，它从公开详情取得 canonical chain 与 contract；指定时也必须同时传入 `--chain` 和 `--addr`。任何真实交易都要求显式 `--yes`：
+
+- `--dry-run` 完成标准识别、链上价格/供应/持仓/余额读取、模拟和 gas 估算，但不签名、不广播。
+- 不带 `--dry-run` 或 `--yes` 时仍完成只读 preflight，然后返回 `ACQUIRE_CONFIRM_REQUIRED`。
+- `--yes` 才签名并广播；`--dry-run` 与 `--yes` 互斥。
+- `--max-price` 和 `--max-gas-fee` 是可选的 Agent 预算护栏，分别限制链上价格与估算的最大 gas 费用。
+- 已持有时返回 `ACQUIRE_ALREADY_HELD`；只有 `--force --yes` 才会再次购买。
+- 广播后结果不确定时不会自动重发。`ACQUIRE_RESULT_UNKNOWN` 会带 tx hash，并要求先检查 receipt 或 `library`。
+
+`skill show` 是任何人可用的公开详情；Creator 的完整可编辑状态仍由 `skill manage get` 提供。CLI 不再提供含义模糊的根级 `skill get`。
+
+## Skill 评价与评分
+
+```bash
+finchip skill review list audit-pro-finchip
+finchip skill review list audit-pro-finchip --limit 10 --json
+
+finchip skill review submit audit-pro-finchip \
+  --operational-independence 5 \
+  --output-quality 4 \
+  --model-compatibility 5 \
+  --body "Works reliably in an agent workflow." \
+  --dry-run
+
+finchip skill review submit audit-pro-finchip \
+  --operational-independence 5 \
+  --output-quality 4 \
+  --model-compatibility 5 \
+  --body "Works reliably in an agent workflow." \
+  --yes
+```
+
+`skill review list` 复用匿名公开详情读取已发布评价，不要求登录，也不发送 Cookie、钱包签名或其他身份材料。Site 最多返回最新 50 条；`--limit` 只限制 CLI 展示或 JSON 返回的条数，不会改变 Site 的排序。
+
+提交评价采用“提交时当前持有”规则：
+
+- 必须先 `finchip login`，且该账号需要绑定钱包。
+- 登录钱包必须在所选部署上当前持有 license；ERC-1155 检查 token 1，ERC-721 检查钱包余额。
+- Creator 不能评价自己的 Skill；同一账号对同一 Skill 只能发布一条评价。
+- CLI 会先做链上持仓预检，但 Site 会在写入时再次独立校验；CLI 预检不是授权依据。
+- `--dry-run` 只验证身份、部署和当前持仓；真正公开发布必须显式使用 `--yes`。
+
+用户分别提交 Operational Independence、Output Quality、Model Compatibility 三项 1–5 分。总评分由 Site 取三项平均值生成，不单独接收一个可人为不一致的 overall rating。出售或转出 license 后，既有评价不会自动删除；“verified holder”只表示 Site 在提交当时验证通过。
+
+删除命令为 `finchip skill review delete <slug> --review-id <id> --yes`。删除自己的评价只依据登录账号对该评价的所有权，不要求账号仍然持有 license，也不读取公开详情、链上余额或 RPC。`reviewId` 可从提交结果或 `review list --json` 取得；其他账号的评价会统一返回 `REVIEW_NOT_FOUND_OR_NOT_OWNED`。
+
+## Skill 管理
+
+```bash
+finchip skill manage get my-skill-finchip --json
+finchip skill manage apply my-skill-finchip --file ./manage.json --dry-run
+finchip skill manage apply my-skill-finchip --file ./manage.json
+finchip skill manage image set my-skill-finchip --file ./cover.png --dry-run
+finchip skill manage image set my-skill-finchip --file ./cover.png --yes
+finchip skill manage page upload my-skill-finchip \
+  --kind instruction \
+  --html ./instruction.html \
+  --assets-dir ./assets \
+  --dry-run
+finchip skill manage page restore my-skill-finchip --kind instruction --yes
+finchip skill manage attest my-skill-finchip \
+  --chain bsc \
+  --addr 0x1111111111111111111111111111111111111111 \
+  --dry-run
+finchip skill manage attest my-skill-finchip \
+  --chain bsc \
+  --addr 0x1111111111111111111111111111111111111111 \
+  --yes
+
+finchip skill price set my-skill-finchip \
+  --chain bsc \
+  --addr 0x1111111111111111111111111111111111111111 \
+  --price 0.02 \
+  --yes
+
+finchip skill price sync my-skill-finchip \
+  --chain bsc \
+  --addr 0x1111111111111111111111111111111111111111 \
+  --tx-hash 0xabababababababababababababababababababababababababababababababab
+```
+
+`skill manage get` 返回完整 Creator 状态和可直接编辑的 `editable` JSON。`manage apply` 接受最多 1 MiB 的声明式 JSON，`--file -` 可从 stdin 读取。省略字段保持不变；`supportedAgents` 与 `relatedSkillSlugs` 一旦出现就整体替换，空数组表示清空。可清除字段使用 `null` 或空字符串。
+
+Manage API 只使用 `finchip login` 保存的 Cookie，不发送 viewer signature、`wallet_addr` 或 FC key。`imagePath` 只能通过后续的图片命令管理：它不会出现在 `editable`，也不会由 `manage apply` 发回 Site。关联 Skill 在 CLI 中使用 slug，发送 PATCH 前会精确解析为 Site 内部 ID；PATCH 后 CLI 会重新读取状态，检查 Agent 与关联 Skill 是否被 Site 原样保存。
+
+图片支持 JPG、PNG、WebP、GIF，最大 4 MiB；CLI 会同时校验扩展名和 magic bytes。已有图片的替换需要 `--yes`，首次上传不需要。Site 当前没有单独删除图片的 Manage API，因此 CLI 不提供 image remove。
+
+自定义 instruction、benchmark、showcase 页面由一个 HTML 文件和可选的平铺 assets 目录组成，总计最多 4 MiB。CLI 不递归目录、不跟随 symlink，禁止 JavaScript 资产、`<script>`、root-absolute URL 和嵌套 asset 路径；外部图片 host 最终仍由 Site 的账户 allowlist 判定。覆盖已有页面和 restore 会先清理服务器端资源，因此真实执行需要 `--yes`，网络结果不确定时 CLI 不会自动重试。
+
+Creator Attestation 是独立、一次性且需要 gas 的链上操作，不会自动加入 publish。必须显式提供 `--chain` 和 `--addr`；CLI 会确认 Site 登录钱包、`FINCHIP_PRIVATE_KEY` 钱包和链上 immutable `genesisCreator` 三者一致，再用链上 slug 与 content hash 构造和 Site 相同的 EIP-712 payload。`--dry-run` 只比对本地 digest 与 `creatorAttestationDigest()`，不签名、不广播；真实写入还必须提供 `--yes`。旧合约会返回 `ATTESTATION_UNSUPPORTED`，已经验证的合约幂等返回 `CREATOR_ALREADY_VERIFIED`。
+
+CLI 暂不创建 ERC-721 Chip，但已有 ERC-721 的查询、购买、持仓和二级市场操作继续支持。
+
+## 市场、购买与持仓
+
+```bash
+finchip market list --chain bsc
+finchip market search --chain base --category "Dev Environment"
+finchip acquire --slug audit-pro-finchip --dry-run
+finchip acquire --slug audit-pro-finchip --chain bsc --addr 0x1111111111111111111111111111111111111111 --yes
+finchip library
+finchip library --chain bsc
+```
+
+Market 会通过 ERC-165 区分 ERC-1155 与 ERC-721。ERC-721 使用 `forkPrice / totalForked / maxForks`，不会按 ERC-1155 getter 读取。
+
+二级市场：
+
+```bash
+finchip trade list --chain bsc
+finchip trade buy --id 1 --chain bsc --yes
+finchip trade sell --slug audit-pro-finchip --price 0.02 --chain bsc --yes
+finchip trade sell --slug forkable-finchip --fork --token-id 7 --price 0.10 --chain bsc --yes
+finchip trade cancel --id 1 --chain bsc --yes
+```
+
+`trade sell` 在任何 approval 或 `listToken` 广播前都会调用 Site 的公开
+`/api/v2/trade/listings/preflight`。Site 统一计算
+`availableQuantity = 当前持仓 - 当前卖家的活跃挂单数量`，校验 token standard、
+Market approval，并模拟这次 `listToken`。库存有效但尚未授权时，CLI 才发送
+approval；确认后会再次调用同一预检，再立即提交挂单。预检请求不携带登录
+Cookie、Authorization、FC key 或钱包签名；Site/RPC 不可用或返回的 chain、
+Market、Chip、seller 与本地交易不一致时，CLI 会停止，不退回旧的直连路径。
+Site 返回的 creator 还必须与 CLI 随后读取的链上 `creator()` 一致；实际挂单
+使用链上读取值，避免版税被路由到错误地址。
+
+这是 Site UI 和 CLI 的正常流程安全约束，不是合约级限制：直接调用 Market
+合约仍可绕过它，且预检与交易确认之间仍存在很短的链上状态变化窗口。
+
+## 链与协议检查
+
+`--chain` 接受 chain key 或 chain ID：
+
+| Key | Chain ID | Network |
+|---|---:|---|
+| `bsc` | 56 | BNB Smart Chain |
+| `base` | 8453 | Base |
+| `ethereum` | 1 | Ethereum |
+| `arbitrum` | 42161 | Arbitrum One |
+| `optimism` | 10 | Optimism |
+| `arbsepolia` | 421614 | Arbitrum Sepolia（内部测试） |
+
+```bash
+finchip chains
+finchip protocol --chain bsc
+finchip doctor --verbose
+```
+
+AgentRegistry 地址是 CLI 的链级入口；Factory、ChipRegistry、Market、FeeRouter 和 deployer 地址均通过 `getProtocolExtended()` 动态发现。
+
+## A2A 与 x402
+
+CLI 会读取 Site 发布的 `/.well-known/*`、`/openapi.json` 和 `/api/v1`：
+
+```bash
 finchip doctor
-
-# 5. Browse and operate
-finchip market list                              # default chain (BSC)
-finchip market list --chain base                 # by chain key
-finchip acquire --slug audit-pro_finchip
-finchip launch ./my-skill/
-finchip trade list
-finchip library                                  # see what you hold
-
-# 6. Pay an x402-protected URL
 finchip pay https://finchip.ai/api/v1 --dry-run
+finchip pay https://finchip.ai/api/v1 --yes
 ```
 
----
+`doctor` 检查 endpoint discovery 与链上协议状态；`protocol` 展示具体链的协议地址。`pay` 消费 x402 challenge 并签署 EIP-3009 USDC authorization。
 
-## Commands
-
-### Bootstrap
-
-| Command | Description |
-|---|---|
-| `finchip init --key <fc_key>` | Save config, verify key on-chain |
-| `finchip verify` | Confirm registration + show protocol + V2.5 lock state |
-| `finchip register --perm full` | Write fc_key to AgentRegistry |
-
-### Market & catalog
-
-| Command | Description |
-|---|---|
-| `finchip market list [--chain X] [--category C]` | List all chips on a chain |
-| `finchip market search --category Finance` | Same as list, broader default limit |
-| `finchip library [--wallet 0x... \| --chain X]` | Cross-chain holdings |
-
-### Acquire & launch
-
-| Command | Description |
-|---|---|
-| `finchip acquire --slug <s>` | Buy an ERC-1155 license (auto-detect; or `--fork` for ERC-721) |
-| `finchip launch <path>` | Deploy from `chip.json` (set `"standard": "ERC721"` or pass `--standard ERC721`) |
-| `finchip prepare <file> --slug <s> [--fork]` | Full pipeline: encrypt → IPFS → deploy → setLitData → register-chip |
-
-### Trade
-
-| Command | Description |
-|---|---|
-| `finchip trade list` | Active secondary listings |
-| `finchip trade buy --id <id>` | Buy a listing |
-| `finchip trade sell --slug <s> --price <p>` | List ERC-1155 |
-| `finchip trade sell --slug <s> --price <p> --fork --token-id <id>` | List ERC-721 |
-| `finchip trade cancel --id <id>` | Cancel listing |
-
-### Inspect
-
-| Command | Description |
-|---|---|
-| `finchip doctor [-v]` | 3-layer health check: hardcoded / A2A / on-chain + drift detection |
-| `finchip protocol [--chain X]` | Full protocol state for a chain + A2A endpoint surface |
-| `finchip chains` | List 5 supported chains + AgentRegistry addresses |
-
-### Configure
-
-| Command | Description |
-|---|---|
-| `finchip config get [key]` | Show config (sensitive keys masked) |
-| `finchip config set <key> <value>` | Update a config value |
-| `finchip config unset <key>` | Remove a config value |
-
-### Commerce (x402)
-
-| Command | Description |
-|---|---|
-| `finchip pay <url> [--dry-run]` | Consume an HTTP 402 challenge; signs EIP-3009 USDC auth (no gas needed) |
-
----
-
-## ERC-721 fork chips
-
-V2.4 introduced **fork chips** — ERC-721 NFTs where each fork is a unique tokenized branch of the parent skill. Use the same CLI commands; pass `--fork` (or set `"standard": "ERC721"` in chip.json).
+## 配置
 
 ```bash
-# Launch a fork chip
-finchip prepare ./my-skill.js \
-  --slug my-skill_finchip --fork \
-  --price 0.05 --max-forks 100
-
-# Acquire a fork
-finchip acquire --slug my-skill_finchip --fork
-
-# List a fork for sale (need --token-id since each fork is unique)
-finchip trade sell --slug my-skill_finchip --fork --token-id 7 --price 0.10
+finchip config get
+finchip config set chain base
+finchip config unset rpc
 ```
 
----
+优先通过 `FINCHIP_PRIVATE_KEY` 环境变量提供实际私钥，不要把私钥写入脚本或文档。
 
-## A2A Protocol Stack integration
+历史配置中的 `pinataJwt` 不再被发布流程使用，但仍始终作为敏感字段遮罩，避免旧 secret 被 `config get` 输出。
 
-FinChip publishes a full **Level 5 "Agent-Native"** A2A protocol stack at `finchip.ai/.well-known/*` and `finchip.ai/openapi.json` + `/api/v1`. The CLI is the terminal-side counterpart:
+## 主要命令
 
-| A2A surface | CLI counterpart |
+| Command | Purpose |
 |---|---|
-| `acp.json` declares 5 services (discovery, acquire, launch, trade, library) | `finchip market`, `acquire`, `launch`, `trade`, `library` |
-| `mcp.json` declares 6 tools | All exposed as CLI commands |
-| `ucp` declares 3 services + `chains` | `finchip chains`, `finchip protocol` |
-| `agent-card.json` declares contract addresses | `finchip doctor` cross-checks against on-chain |
-| `/api/v1` returns x402 challenge | `finchip pay` consumes it |
-| `/api/get-key`, `/api/lit-encrypt`, `/api/register-chip` | `finchip prepare` calls all three |
+| `finchip login/status/logout` | Site 钱包账号 session |
+| `finchip init/register/verify` | fc_key 与 AgentRegistry 权限 |
+| `finchip skill publish` | 唯一完整加密发布入口 |
+| `finchip download` | 授权下载并解密；不安装、不执行 |
+| `finchip skill search` | 搜索 Site 索引中的 Web3 Skill |
+| `finchip skill show` | 匿名公开 Skill 详情 |
+| `finchip skill review list/submit/delete` | 读取、提交或删除自己的评价 |
+| `finchip skill manage/price` | Creator 管理 |
+| `finchip market list/search` | 直接浏览链上 ERC-1155/721 registry |
+| `finchip acquire` | 安全预检并显式确认购买 license 或 fork |
+| `finchip library` | 按钱包查看持仓 |
+| `finchip trade` | 二级市场 |
+| `finchip chains/protocol/doctor` | 链与 A2A 检查 |
+| `finchip pay` | x402 client |
 
-Run `finchip doctor` to see all 21 endpoints health-checked in one go.
-
----
-
-## x402 client
-
-Consumes Coinbase x402 v1 payment challenges. The CLI signs an EIP-3009 `TransferWithAuthorization` on USDC; **no gas needed from the client** (the server submits the authorization).
+## 开发验证
 
 ```bash
-# Dry run — inspect what would be paid
-finchip pay https://finchip.ai/api/v1 --dry-run
-
-# Live — sign + retry with X-Payment header
-finchip pay https://finchip.ai/api/v1
+npm ci --ignore-scripts
+npm test
+npm run check:syntax
+npm run check:package
+npm audit --omit=dev --audit-level=high
+git diff --check
 ```
 
-The CLI auto-picks the chain where your wallet has sufficient USDC balance. Supported networks (Coinbase x402 canonical names): `base`, `ethereum`, `arbitrum`, `optimism`, `bnb`.
+仓库使用随 CLI 发布的 `npm-shrinkwrap.json` 固定开发、CI 和全局安装的依赖树。依赖升级应单独审查并重新通过完整门禁。
 
----
+GitHub CI 覆盖 Node 22、24、26，以及 Linux、Windows、Windows Git Bash、Apple Silicon macOS 和 Intel macOS。Node 20 只运行不支持版本的启动守卫测试。
 
-## Chains
-
-| `--chain` value | Chain ID | Symbol |
-|---|---|---|
-| `bsc` | 56 | BNB |
-| `base` | 8453 | ETH |
-| `ethereum` | 1 | ETH |
-| `arbitrum` | 42161 | ETH |
-| `optimism` | 10 | ETH |
-
-Default: BSC (`--chain 56`). Set a different default with `finchip config set chain base`.
-
----
-
-## Permissions
-
-| Flag | Value | Allows |
-|---|---|---|
-| `--perm read` | 0x01 | Read market / chip info |
-| `--perm acquire` | 0x02 | `purchaseLicense` / `purchaseFork` |
-| `--perm launch` | 0x04 | `deployChip` / `deployChip721` |
-| `--perm trade` | 0x08 | `listToken` / `buyListing` |
-| `--perm full` | 0x0F | All of the above |
-
-You can also pass numeric: `--perm 0x06` (acquire + launch only).
-
----
-
-## Config (`~/.finchip/config.json`)
-
-| Key | Description |
-|---|---|
-| `key` | fc_key (display: `fc_xxxxx`) |
-| `keyRaw` | bytes32 raw key |
-| `chain` | Default chain ID |
-| `rpc` | Custom RPC override (optional) |
-| `privateKey` | ⚠ Use `FINCHIP_PRIVATE_KEY` env var instead |
-| `pinataJwt` | ⚠ Use `PINATA_JWT` env var instead |
-
----
-
-## Chip manifest (`chip.json` for `finchip launch`)
-
-```json
-{
-  "name":         "My AI Skill",
-  "slug":         "my-ai-skill_finchip",
-  "standard":     "ERC1155",
-  "metadataURI":  "ipfs://Qm...",
-  "contentHash":  "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "sourceUrl":    "ipfs://Qm...",
-  "category":     "Finance",
-  "licenseType":  "MIT",
-  "feeModel":     0,
-  "licensePrice": "0.01",
-  "maxSupply":    0,
-  "royaltyBPS":   250,
-  "imageURI":     "",
-  "usageLimit":   0
-}
-```
-
-For ERC-721 fork chips, set `"standard": "ERC721"`, replace `licensePrice`/`maxSupply` with `forkPrice`/`maxForks`, and omit `feeModel`/`usageLimit`.
-
----
-
-## Protocol versions
-
-The CLI works with **FinChip Protocol V2.4 / V2.5** (current). It uses `AgentRegistry.getProtocolExtended()` to discover all 5 dependent contracts (ChipRegistry, Factory, Market, FeeRouter, ERC-1155 Deployer, ERC-721 Deployer) at runtime — so when V2.6+ contracts are deployed, the CLI auto-discovers them without any code update.
-
----
-
-## Migration from v0.2.x
-
-If you have an existing `~/.finchip/config.json`, it should continue to work — v0.3.0 reads all the same keys.
-
-Behavioural changes:
-- The `--chain` flag now accepts strings (`bsc`, `base`, etc.) in addition to numeric IDs
-- `finchip launch` now auto-detects which event was emitted (no more silent failures from the old broken parser)
-- `finchip trade sell` now correctly approves the market before listing (previously crashed for unapproved sellers)
-- `finchip prepare` no longer crashes on `require('path')` — uses native ESM imports
-
----
+本地和 CI 测试不会默认执行真实 Site 发布、Oracle grant、下载或链上写入。
 
 ## Links
 
-- 🌐 A2A entry page (Agent bootstrap): https://finchip.ai/a2aentry
-- 📦 npm: https://www.npmjs.com/package/finchip-cli
-- 💻 GitHub: https://github.com/Sleipnirs/finchip-cli
-- 📋 Pinata (for `prepare`): https://app.pinata.cloud/keys
-
----
+- Site: https://finchip.ai
+- A2A entry: https://finchip.ai/a2aentry
+- GitHub: https://github.com/Sleipnirs/finchip-cli
+- npm: https://www.npmjs.com/package/finchip-cli
 
 ## License
 

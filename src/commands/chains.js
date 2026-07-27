@@ -30,6 +30,6 @@ export function cmdChains() {
   inf(`Use any chain ID with --chain <id>, e.g.: finchip market list --chain 8453`);
   inf(`All other protocol addresses (Factory, Market, FeeRouter, ChipRegistry)`);
   inf(`are discovered at runtime via AgentRegistry.getProtocolExtended() —`);
-  inf(`run \`finchip protocol info --chain <id>\` to see them per-chain.`);
+  inf(`run \`finchip protocol --chain <id>\` to see them per-chain.`);
   console.log('');
 }

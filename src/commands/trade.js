@@ -7,6 +7,13 @@ import {
   CHIP_ABI, CHIP_721_ABI, IFACE_ID,
 } from '../protocol.js';
 import { resolveChain } from '../chains.js';
+import { canonicalSlug, siteCanonicalSlug } from '../skill-slug.js';
+import { requireExplicitConfirmation } from '../agent-safety.js';
+import {
+  ensureTradeListingReady,
+  TradePreflightPublicClient,
+  verifyTradeListingCreator,
+} from '../trade-preflight.js';
 import { ok, err, inf, hd, sep, fmtAddr, fmtWei, fmtChain, fmtTxLink, c } from '../utils.js';
 
 // ── List active listings ────────────────────────────────────────────────────
@@ -87,13 +94,17 @@ export async function cmdTradeList(options) {
 
   console.log('');
   inf(`${active.length} active listing(s)`);
-  inf(`Buy:    finchip trade buy --id <id> [--qty <qty>]`);
-  inf(`List:   finchip trade sell --slug <slug> --price <price> [--qty <qty>] [--fork]`);
+  inf(`Buy:    finchip trade buy --id <id> [--qty <qty>] --yes`);
+  inf(`List:   finchip trade sell --slug <slug> --price <price> [--qty <qty>] [--fork] --yes`);
   console.log('');
 }
 
 // ── Buy a listing ───────────────────────────────────────────────────────────
 export async function cmdTradeBuy(options) {
+  if (!requireExplicitConfirmation(options, {
+    code: 'TRADE_CONFIRM_REQUIRED',
+    action: 'buy this secondary-market listing',
+  })) return;
   const cfg    = loadConfig();
   const chain  = resolveChain(options.chain || cfg.chain);
   const id     = options.id;
@@ -152,12 +163,18 @@ export async function cmdTradeBuy(options) {
 
 // ── Sell (list a token) ─────────────────────────────────────────────────────
 export async function cmdTradeSell(options) {
+  if (!requireExplicitConfirmation(options, {
+    code: 'TRADE_CONFIRM_REQUIRED',
+    action: 'approve and list this token for sale',
+  })) return;
   const cfg    = loadConfig();
   const chain  = resolveChain(options.chain || cfg.chain);
-  const { slug, price, qty } = options;
+  const { price, qty } = options;
   const forceFork = !!options.fork;
 
-  if (!slug || !price) { err('--slug and --price are required'); process.exit(1); }
+  if (!options.slug || !price) { err('--slug and --price are required'); process.exit(1); }
+  const slug = siteCanonicalSlug(options.slug);
+  const onchainSlug = canonicalSlug(options.slug);
 
   const proto = await resolveProtocol(chain.id, cfg.rpc).catch(e => {
     err(`Discovery failed: ${e.shortMessage || e.message}`); process.exit(1);
@@ -169,7 +186,7 @@ export async function cmdTradeSell(options) {
   // Resolve chip
   const chipAddr = await pubClient.readContract({
     address: proto.chipRegistry, abi: CHIP_REGISTRY_ABI,
-    functionName: 'resolve', args: [slug],
+    functionName: 'resolve', args: [onchainSlug],
   });
   if (!chipAddr || chipAddr === '0x0000000000000000000000000000000000000000') {
     err(`Slug not found: ${slug}`); process.exit(1);
@@ -187,11 +204,6 @@ export async function cmdTradeSell(options) {
   }
   const standardNum = isFork ? 1 : 0;
   const chipAbi     = isFork ? CHIP_721_ABI : CHIP_ABI;
-
-  // Read creator (for royalty routing)
-  const creator = await pubClient.readContract({
-    address: chipAddr, abi: chipAbi, functionName: 'creator',
-  });
 
   const priceWei = parseEther(String(price));
   const quantity = isFork ? 1n : BigInt(qty || 1);
@@ -211,23 +223,64 @@ export async function cmdTradeSell(options) {
   inf(`qty:     ${quantity}`);
   if (isFork) inf(`tokenId: ${tokenId}`);
 
-  // ── Approval ────────────────────────────────────────────────────────────
-  const approved = await pubClient.readContract({
-    address: chipAddr, abi: chipAbi, functionName: 'isApprovedForAll',
-    args: [account.address, proto.market],
-  }).catch(() => false);
-
-  if (!approved) {
-    inf('Approving market to transfer tokens…');
-    const approveHash = await walletClient.writeContract({
-      address: chipAddr, abi: chipAbi, functionName: 'setApprovalForAll',
-      args: [proto.market, true],
+  // Site owns the listing-availability rule so the Web UI and CLI cannot
+  // drift. This is deliberately fail-closed: direct contract callers can
+  // bypass the API, but this CLI never silently falls back to the unsafe path.
+  const preflightClient = new TradePreflightPublicClient();
+  const preflightInput = {
+    chainId: chain.id,
+    chipAddr,
+    seller: account.address,
+    tokenId: tokenId.toString(),
+    quantity: quantity.toString(),
+    priceWei: priceWei.toString(),
+    standard: isFork ? 'erc721' : 'erc1155',
+  };
+  let ready;
+  let creator;
+  try {
+    ready = await ensureTradeListingReady({
+      preflight: () => preflightClient.preflight(preflightInput),
+      expected: {
+        chainId: chain.id,
+        marketAddr: proto.market,
+        chipAddr,
+        seller: account.address,
+      },
+      approve: async () => {
+        inf('Approving market to transfer tokens…');
+        const approveHash = await walletClient.writeContract({
+          address: chipAddr, abi: chipAbi, functionName: 'setApprovalForAll',
+          args: [proto.market, true],
+        });
+        ok(`approval tx submitted: ${approveHash}`);
+        inf(`explorer:              ${fmtTxLink(approveHash, chain.id)}`);
+        const approvalReceipt = await pubClient.waitForTransactionReceipt({ hash: approveHash });
+        if (approvalReceipt.status !== 'success') {
+          throw Object.assign(new Error('Approval transaction reverted.'), {
+            code: 'TRADE_APPROVAL_FAILED',
+          });
+        }
+        ok('Approval confirmed');
+      },
     });
-    await pubClient.waitForTransactionReceipt({ hash: approveHash });
-    ok('Approval confirmed');
+    creator = await verifyTradeListingCreator({
+      siteCreatorAddr: ready.creatorAddr,
+      readCreator: () => pubClient.readContract({
+        address: chipAddr,
+        abi: chipAbi,
+        functionName: 'creator',
+      }),
+    });
+  } catch (e) {
+    const code = e?.code || 'TRADE_PREFLIGHT_UNAVAILABLE';
+    err(`[${code}] ${e?.message || 'Listing preflight failed. Nothing was submitted.'}`);
+    process.exit(1);
   }
 
   // ── List ────────────────────────────────────────────────────────────────
+  inf(`available after active listings: ${ready.availableQuantity}`);
+  if (ready.estimatedGas) inf(`Site gas estimate: ${ready.estimatedGas}`);
   inf('Sending listToken…');
   const hash = await walletClient.writeContract({
     address: proto.market, abi: MARKET_ABI, functionName: 'listToken',
@@ -247,6 +300,10 @@ export async function cmdTradeSell(options) {
 
 // ── Cancel listing ──────────────────────────────────────────────────────────
 export async function cmdTradeCancel(options) {
+  if (!requireExplicitConfirmation(options, {
+    code: 'TRADE_CONFIRM_REQUIRED',
+    action: 'cancel this secondary-market listing',
+  })) return;
   const cfg    = loadConfig();
   const chain  = resolveChain(options.chain || cfg.chain);
   if (options.id === undefined) { err('--id is required'); process.exit(1); }

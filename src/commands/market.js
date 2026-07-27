@@ -2,9 +2,51 @@
 import { loadConfig } from '../config.js';
 import { resolveProtocol } from '../discovery.js';
 import { getPublicClient } from '../client.js';
-import { CHIP_REGISTRY_ABI, CHIP_ABI } from '../protocol.js';
+import { CHIP_REGISTRY_ABI, CHIP_ABI, CHIP_721_ABI, IFACE_ID } from '../protocol.js';
 import { resolveChain } from '../chains.js';
-import { ok, err, inf, hd, sep, fmtWei, fmtChain, c } from '../utils.js';
+import { siteCanonicalSlug } from '../skill-slug.js';
+import { err, inf, hd, sep, fmtWei, fmtChain, c } from '../utils.js';
+
+export async function readChipMarketDetails(client, addr, slug) {
+  const isErc721 = await client.readContract({
+    address: addr,
+    abi: CHIP_ABI,
+    functionName: 'supportsInterface',
+    args: [IFACE_ID.ERC721],
+  }).catch(() => false);
+  const abi = isErc721 ? CHIP_721_ABI : CHIP_ABI;
+
+  const [name, price, totalMinted, maxSupply, category] = await Promise.all([
+    client.readContract({ address: addr, abi, functionName: 'name' }).catch(() => slug),
+    client.readContract({
+      address: addr,
+      abi,
+      functionName: isErc721 ? 'forkPrice' : 'licensePrice',
+    }).catch(() => 0n),
+    client.readContract({
+      address: addr,
+      abi,
+      functionName: isErc721 ? 'totalForked' : 'totalMinted',
+    }).catch(() => 0n),
+    client.readContract({
+      address: addr,
+      abi,
+      functionName: isErc721 ? 'maxForks' : 'maxSupply',
+    }).catch(() => 0n),
+    client.readContract({ address: addr, abi, functionName: 'category' }).catch(() => ''),
+  ]);
+
+  return {
+    slug: siteCanonicalSlug(slug),
+    addr,
+    name,
+    price,
+    totalMinted,
+    maxSupply,
+    category,
+    kind: isErc721 ? 'ERC-721' : 'ERC-1155',
+  };
+}
 
 export async function cmdMarketList(options) {
   const cfg    = loadConfig();
@@ -58,14 +100,7 @@ export async function cmdMarketList(options) {
       const addr = addrs[j];
       if (!addr || addr === '0x0000000000000000000000000000000000000000') return null;
       try {
-        const [name, price, totalMinted, maxSupply, category] = await Promise.all([
-          client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'name'         }).catch(() => slug),
-          client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'licensePrice' }).catch(() => 0n),
-          client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'totalMinted'  }).catch(() => 0n),
-          client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'maxSupply'    }).catch(() => 0n),
-          client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'category'     }).catch(() => ''),
-        ]);
-        return { slug, addr, name, price, totalMinted, maxSupply, category };
+        return await readChipMarketDetails(client, addr, slug);
       } catch { return null; }
     }));
     results.push(...batchResults.filter(Boolean));

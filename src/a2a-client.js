@@ -5,10 +5,9 @@
 //
 // Used by:
 //   • finchip doctor       — sanity-checks every endpoint
-//   • finchip protocol info — shows the full A2A endpoint surface
+//   • finchip protocol      — shows the full A2A endpoint surface
 //   • finchip pay          — consumes /api/v1 x402 challenge
 //   • finchip market list  — optionally enriches with DB-side skills.json
-//   • prepare.js           — calls /api/get-key, /api/lit-encrypt, /api/register-chip
 
 const DEFAULT_BASE = process.env.FINCHIP_API_URL || 'https://finchip.ai';
 
@@ -111,36 +110,6 @@ export async function pingAllEndpoints(base = DEFAULT_BASE) {
     }
   }
   return results;
-}
-
-// ── Internal FinChip API endpoints (used by prepare.js) ─────────────────────
-export async function apiGetKey(payload, base = DEFAULT_BASE) {
-  const res = await fetchWithTimeout(`${base}/api/get-key`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`get-key ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-export async function apiLitEncrypt(payload, base = DEFAULT_BASE) {
-  const res = await fetchWithTimeout(`${base}/api/lit-encrypt`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`lit-encrypt ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-export async function apiRegisterChip(payload, base = DEFAULT_BASE) {
-  const res = await fetchWithTimeout(`${base}/api/register-chip`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  return { ok: res.ok, status: res.status, body: res.ok ? await res.json() : await res.text() };
 }
 
 export { DEFAULT_BASE };

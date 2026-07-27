@@ -5,11 +5,15 @@ import { resolveProtocol } from '../discovery.js';
 import { getPublicClient } from '../client.js';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
-  AGENT_REGISTRY, AGENT_REGISTRY_ABI,
   CHIP_REGISTRY_ABI, CHIP_ABI, CHIP_721_ABI, IFACE_ID,
 } from '../protocol.js';
-import { listChains } from '../chains.js';
-import { ok, err, inf, hd, sep, fmtAddr, fmtChain, fmtWei, c } from '../utils.js';
+import { listChains, resolveChain } from '../chains.js';
+import { siteCanonicalSlug } from '../skill-slug.js';
+import { ok, err, inf, hd, sep, fmtAddr, fmtWei, c } from '../utils.js';
+
+export function chainsForFilter(chainInput) {
+  return chainInput ? [resolveChain(chainInput)] : listChains();
+}
 
 export async function cmdLibrary(options) {
   const cfg    = loadConfig();
@@ -26,10 +30,7 @@ export async function cmdLibrary(options) {
   }
 
   // Allow filtering by single chain
-  const filterChain = options.chain ? parseInt(options.chain) : null;
-  const chainsToScan = filterChain
-    ? listChains().filter(ch => ch.id === filterChain)
-    : listChains();
+  const chainsToScan = chainsForFilter(options.chain);
 
   hd(`FinChip Library — ${fmtAddr(walletAddress)}`);
   sep();
@@ -100,7 +101,7 @@ export async function cmdLibrary(options) {
               client.readContract({ address: addr, abi: CHIP_721_ABI, functionName: 'forkPrice'   }).catch(() => 0n),
             ]);
             if (bal === 0n) return null;
-            return { slug, addr, name, balance: bal, price, kind: 'ERC-721' };
+            return { slug: siteCanonicalSlug(slug), addr, name, balance: bal, price, kind: 'ERC-721' };
           } else {
             const [bal, name, price] = await Promise.all([
               client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'balanceOf', args: [walletAddress, 1n] }).catch(() => 0n),
@@ -108,7 +109,7 @@ export async function cmdLibrary(options) {
               client.readContract({ address: addr, abi: CHIP_ABI, functionName: 'licensePrice'}).catch(() => 0n),
             ]);
             if (bal === 0n) return null;
-            return { slug, addr, name, balance: bal, price, kind: 'ERC-1155' };
+            return { slug: siteCanonicalSlug(slug), addr, name, balance: bal, price, kind: 'ERC-1155' };
           }
         } catch { return null; }
       }));

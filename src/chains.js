@@ -1,8 +1,8 @@
 // FinChip CLI v0.3.0 — Chain configuration
-// Single source of truth for all 5 supported chains.
+// Single source of truth for all supported chains.
 // Replaces scattered `chainId === 56 ? 'BNB' : 'ETH'` logic across the codebase.
 
-import { bsc, base, mainnet, arbitrum, optimism } from 'viem/chains';
+import { bsc, base, mainnet, arbitrum, optimism, arbitrumSepolia } from 'viem/chains';
 
 export const CHAINS = {
   56: {
@@ -77,6 +77,27 @@ export const CHAINS = {
       'https://mainnet.optimism.io',
     ],
     usdc: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+  },
+  // ── Internal testnet ──────────────────────────────────────────────────────
+  // Arbitrum Sepolia hosts a V2.5 fresh-bootstrap deployment for internal
+  // testing (2026-06-17). All 7 contracts redeployed (no sticky); treasury
+  // is the deployer EOA, not a Safe. Use `--chain arbsepolia` to operate it.
+  // USDC is Circle's testnet contract; x402 flows work against Coinbase's
+  // x402 sandbox if a server publishes a `bnb`-style accepts entry for it.
+  421614: {
+    id: 421614,
+    key: 'arbsepolia',
+    name: 'Arbitrum Sepolia (testnet)',
+    short: 'ArbSep',
+    symbol: 'ETH',
+    viemChain: arbitrumSepolia,
+    explorer: 'https://sepolia.arbiscan.io',
+    rpcs: [
+      'https://sepolia-rollup.arbitrum.io/rpc',
+      'https://arbitrum-sepolia-rpc.publicnode.com',
+    ],
+    usdc: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d', // Circle Arb Sepolia USDC
+    isTestnet: true,
   },
 };
 
