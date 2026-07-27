@@ -12,6 +12,7 @@ import { requireExplicitConfirmation } from '../agent-safety.js';
 import {
   ensureTradeListingReady,
   TradePreflightPublicClient,
+  verifyTradeListingCreator,
 } from '../trade-preflight.js';
 import { ok, err, inf, hd, sep, fmtAddr, fmtWei, fmtChain, fmtTxLink, c } from '../utils.js';
 
@@ -236,6 +237,7 @@ export async function cmdTradeSell(options) {
     standard: isFork ? 'erc721' : 'erc1155',
   };
   let ready;
+  let creator;
   try {
     ready = await ensureTradeListingReady({
       preflight: () => preflightClient.preflight(preflightInput),
@@ -262,6 +264,14 @@ export async function cmdTradeSell(options) {
         ok('Approval confirmed');
       },
     });
+    creator = await verifyTradeListingCreator({
+      siteCreatorAddr: ready.creatorAddr,
+      readCreator: () => pubClient.readContract({
+        address: chipAddr,
+        abi: chipAbi,
+        functionName: 'creator',
+      }),
+    });
   } catch (e) {
     const code = e?.code || 'TRADE_PREFLIGHT_UNAVAILABLE';
     err(`[${code}] ${e?.message || 'Listing preflight failed. Nothing was submitted.'}`);
@@ -274,7 +284,7 @@ export async function cmdTradeSell(options) {
   inf('Sending listToken…');
   const hash = await walletClient.writeContract({
     address: proto.market, abi: MARKET_ABI, functionName: 'listToken',
-    args: [chipAddr, ready.creatorAddr, tokenId, quantity, priceWei, standardNum],
+    args: [chipAddr, creator, tokenId, quantity, priceWei, standardNum],
   });
   ok(`tx submitted: ${hash}`);
   inf(`explorer:     ${fmtTxLink(hash, chain.id)}`);

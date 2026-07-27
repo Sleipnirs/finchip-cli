@@ -298,6 +298,8 @@ Market approval，并模拟这次 `listToken`。库存有效但尚未授权时�
 approval；确认后会再次调用同一预检，再立即提交挂单。预检请求不携带登录
 Cookie、Authorization、FC key 或钱包签名；Site/RPC 不可用或返回的 chain、
 Market、Chip、seller 与本地交易不一致时，CLI 会停止，不退回旧的直连路径。
+Site 返回的 creator 还必须与 CLI 随后读取的链上 `creator()` 一致；实际挂单
+使用链上读取值，避免版税被路由到错误地址。
 
 这是 Site UI 和 CLI 的正常流程安全约束，不是合约级限制：直接调用 Market
 合约仍可绕过它，且预检与交易确认之间仍存在很短的链上状态变化窗口。

@@ -103,3 +103,29 @@ export async function ensureTradeListingReady({ preflight, approve, expected }) 
   await approve();
   return requireReadyResult(await preflight(), expected);
 }
+
+export async function verifyTradeListingCreator({ siteCreatorAddr, readCreator }) {
+  let chainCreatorAddr;
+  try {
+    chainCreatorAddr = await readCreator();
+  } catch {
+    throw new TradePreflightError(
+      'TRADE_CREATOR_VERIFICATION_FAILED',
+      'Could not verify the current creator from chain state.',
+    );
+  }
+  if (!ADDRESS_RE.test(siteCreatorAddr || '') || !ADDRESS_RE.test(chainCreatorAddr || '')) {
+    throw new TradePreflightError(
+      'TRADE_CREATOR_VERIFICATION_FAILED',
+      'Creator verification returned an invalid address.',
+    );
+  }
+  if (siteCreatorAddr.toLowerCase() !== chainCreatorAddr.toLowerCase()) {
+    throw new TradePreflightError(
+      'TRADE_CREATOR_MISMATCH',
+      'Site creator does not match the current on-chain creator. Nothing was submitted.',
+      { siteCreatorAddr, chainCreatorAddr },
+    );
+  }
+  return chainCreatorAddr;
+}

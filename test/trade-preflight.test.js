@@ -5,6 +5,7 @@ import {
   ensureTradeListingReady,
   TradePreflightError,
   TradePreflightPublicClient,
+  verifyTradeListingCreator,
 } from '../src/trade-preflight.js';
 
 const INPUT = {
@@ -173,5 +174,33 @@ test('listing orchestration rejects a Site response for a different deployment',
       },
     }),
     error => error.code === 'TRADE_DEPLOYMENT_MISMATCH',
+  );
+});
+
+test('creator verification returns the chain value only when it matches Site', async () => {
+  const chainCreator = await verifyTradeListingCreator({
+    siteCreatorAddr: '0x3333333333333333333333333333333333333333',
+    readCreator: async () => '0x3333333333333333333333333333333333333333',
+  });
+  assert.equal(chainCreator, '0x3333333333333333333333333333333333333333');
+});
+
+test('creator verification rejects a royalty route that differs from chain state', async () => {
+  await assert.rejects(
+    () => verifyTradeListingCreator({
+      siteCreatorAddr: '0x3333333333333333333333333333333333333333',
+      readCreator: async () => '0x9999999999999999999999999999999999999999',
+    }),
+    error => error.code === 'TRADE_CREATOR_MISMATCH',
+  );
+});
+
+test('creator verification fails closed when chain state cannot be read', async () => {
+  await assert.rejects(
+    () => verifyTradeListingCreator({
+      siteCreatorAddr: '0x3333333333333333333333333333333333333333',
+      readCreator: async () => { throw new Error('RPC down'); },
+    }),
+    error => error.code === 'TRADE_CREATOR_VERIFICATION_FAILED',
   );
 });
