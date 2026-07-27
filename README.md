@@ -291,6 +291,17 @@ finchip trade sell --slug forkable-finchip --fork --token-id 7 --price 0.10 --ch
 finchip trade cancel --id 1 --chain bsc --yes
 ```
 
+`trade sell` 在任何 approval 或 `listToken` 广播前都会调用 Site 的公开
+`/api/v2/trade/listings/preflight`。Site 统一计算
+`availableQuantity = 当前持仓 - 当前卖家的活跃挂单数量`，校验 token standard、
+Market approval，并模拟这次 `listToken`。库存有效但尚未授权时，CLI 才发送
+approval；确认后会再次调用同一预检，再立即提交挂单。预检请求不携带登录
+Cookie、Authorization、FC key 或钱包签名；Site/RPC 不可用或返回的 chain、
+Market、Chip、seller 与本地交易不一致时，CLI 会停止，不退回旧的直连路径。
+
+这是 Site UI 和 CLI 的正常流程安全约束，不是合约级限制：直接调用 Market
+合约仍可绕过它，且预检与交易确认之间仍存在很短的链上状态变化窗口。
+
 ## 链与协议检查
 
 `--chain` 接受 chain key 或 chain ID：

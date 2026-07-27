@@ -9,6 +9,10 @@ import {
 import { resolveChain } from '../chains.js';
 import { canonicalSlug, siteCanonicalSlug } from '../skill-slug.js';
 import { requireExplicitConfirmation } from '../agent-safety.js';
+import {
+  ensureTradeListingReady,
+  TradePreflightPublicClient,
+} from '../trade-preflight.js';
 import { ok, err, inf, hd, sep, fmtAddr, fmtWei, fmtChain, fmtTxLink, c } from '../utils.js';
 
 // ── List active listings ────────────────────────────────────────────────────
@@ -200,11 +204,6 @@ export async function cmdTradeSell(options) {
   const standardNum = isFork ? 1 : 0;
   const chipAbi     = isFork ? CHIP_721_ABI : CHIP_ABI;
 
-  // Read creator (for royalty routing)
-  const creator = await pubClient.readContract({
-    address: chipAddr, abi: chipAbi, functionName: 'creator',
-  });
-
   const priceWei = parseEther(String(price));
   const quantity = isFork ? 1n : BigInt(qty || 1);
 
@@ -223,27 +222,59 @@ export async function cmdTradeSell(options) {
   inf(`qty:     ${quantity}`);
   if (isFork) inf(`tokenId: ${tokenId}`);
 
-  // ── Approval ────────────────────────────────────────────────────────────
-  const approved = await pubClient.readContract({
-    address: chipAddr, abi: chipAbi, functionName: 'isApprovedForAll',
-    args: [account.address, proto.market],
-  }).catch(() => false);
-
-  if (!approved) {
-    inf('Approving market to transfer tokens…');
-    const approveHash = await walletClient.writeContract({
-      address: chipAddr, abi: chipAbi, functionName: 'setApprovalForAll',
-      args: [proto.market, true],
+  // Site owns the listing-availability rule so the Web UI and CLI cannot
+  // drift. This is deliberately fail-closed: direct contract callers can
+  // bypass the API, but this CLI never silently falls back to the unsafe path.
+  const preflightClient = new TradePreflightPublicClient();
+  const preflightInput = {
+    chainId: chain.id,
+    chipAddr,
+    seller: account.address,
+    tokenId: tokenId.toString(),
+    quantity: quantity.toString(),
+    priceWei: priceWei.toString(),
+    standard: isFork ? 'erc721' : 'erc1155',
+  };
+  let ready;
+  try {
+    ready = await ensureTradeListingReady({
+      preflight: () => preflightClient.preflight(preflightInput),
+      expected: {
+        chainId: chain.id,
+        marketAddr: proto.market,
+        chipAddr,
+        seller: account.address,
+      },
+      approve: async () => {
+        inf('Approving market to transfer tokens…');
+        const approveHash = await walletClient.writeContract({
+          address: chipAddr, abi: chipAbi, functionName: 'setApprovalForAll',
+          args: [proto.market, true],
+        });
+        ok(`approval tx submitted: ${approveHash}`);
+        inf(`explorer:              ${fmtTxLink(approveHash, chain.id)}`);
+        const approvalReceipt = await pubClient.waitForTransactionReceipt({ hash: approveHash });
+        if (approvalReceipt.status !== 'success') {
+          throw Object.assign(new Error('Approval transaction reverted.'), {
+            code: 'TRADE_APPROVAL_FAILED',
+          });
+        }
+        ok('Approval confirmed');
+      },
     });
-    await pubClient.waitForTransactionReceipt({ hash: approveHash });
-    ok('Approval confirmed');
+  } catch (e) {
+    const code = e?.code || 'TRADE_PREFLIGHT_UNAVAILABLE';
+    err(`[${code}] ${e?.message || 'Listing preflight failed. Nothing was submitted.'}`);
+    process.exit(1);
   }
 
   // ── List ────────────────────────────────────────────────────────────────
+  inf(`available after active listings: ${ready.availableQuantity}`);
+  if (ready.estimatedGas) inf(`Site gas estimate: ${ready.estimatedGas}`);
   inf('Sending listToken…');
   const hash = await walletClient.writeContract({
     address: proto.market, abi: MARKET_ABI, functionName: 'listToken',
-    args: [chipAddr, creator, tokenId, quantity, priceWei, standardNum],
+    args: [chipAddr, ready.creatorAddr, tokenId, quantity, priceWei, standardNum],
   });
   ok(`tx submitted: ${hash}`);
   inf(`explorer:     ${fmtTxLink(hash, chain.id)}`);
