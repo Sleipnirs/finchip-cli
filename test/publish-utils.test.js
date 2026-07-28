@@ -20,6 +20,7 @@ import {
   selectPrimaryIndex,
   sha256Hex,
   siteCanonicalSlug,
+  siteLookupSlug,
   wrapFinchipV2ContentKey,
 } from '../src/publish-utils.js';
 import { assertOwnerOnlyPermissions } from '../test-support/private-permissions.js';
@@ -37,6 +38,13 @@ test('slug helpers separate the Site slug from the legacy on-chain slug', () => 
   assert.equal(siteCanonicalSlug('my - skill'), 'my-skill-finchip');
   assert.equal(canonicalSlug('AI - Agent Tools'), 'ai-agent-tools_finchip');
   assert.equal(siteCanonicalSlug('AI - Agent Tools'), 'ai-agent-tools-finchip');
+});
+
+test('Site lookup slugs normalize FinChip suffixes without rewriting Web2 slugs', () => {
+  assert.equal(siteLookupSlug('my---skill_finchip'), 'my-skill-finchip');
+  assert.equal(siteLookupSlug('My---Skill-FinChip'), 'my-skill-finchip');
+  assert.equal(siteLookupSlug('  bioservices-multi-db-client  '), 'bioservices-multi-db-client');
+  assert.equal(siteLookupSlug('Musk-Skill'), 'Musk-Skill');
 });
 
 test('source safety rejects common credentials and selects SKILL.md first', () => {

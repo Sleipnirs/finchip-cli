@@ -94,7 +94,7 @@ test('image and page commands require confirmation only for destructive writes',
         }));
         return;
       }
-      if (req.url === `/api/v2/skills/demo_finchip/manage?addr=${ADDR}&chainId=56` && req.method === 'GET') {
+      if (req.url === `/api/v2/skills/demo-finchip/manage?addr=${ADDR}&chainId=56` && req.method === 'GET') {
         res.end(JSON.stringify({
           skill: {
             id: 'skill-1',
@@ -109,7 +109,7 @@ test('image and page commands require confirmation only for destructive writes',
         }));
         return;
       }
-      if (req.url === '/api/v2/skills/demo_finchip/manage/image' && req.method === 'POST') {
+      if (req.url === '/api/v2/skills/demo-finchip/manage/image' && req.method === 'POST') {
         imagePath = 'skills/skill-1/display/new.png';
         assert.match(req.headers['content-type'], /^multipart\/form-data; boundary=/);
         assert.match(raw.toString('latin1'), /name="image"; filename="cover.png"/);
@@ -118,7 +118,7 @@ test('image and page commands require confirmation only for destructive writes',
         res.end(JSON.stringify({ imagePath, displayOverrides: { imagePath } }));
         return;
       }
-      if (req.url === '/api/v2/skills/demo_finchip/manage/instruction' && req.method === 'POST') {
+      if (req.url === '/api/v2/skills/demo-finchip/manage/instruction' && req.method === 'POST') {
         instructionManifest = { mode: 'html', hash: 'new' };
         const multipart = raw.toString('latin1');
         assert.match(req.headers['content-type'], /^multipart\/form-data; boundary=/);
@@ -129,7 +129,7 @@ test('image and page commands require confirmation only for destructive writes',
         res.end(JSON.stringify({ manifest: instructionManifest }));
         return;
       }
-      if (req.url === '/api/v2/skills/demo_finchip/manage/instruction' && req.method === 'DELETE') {
+      if (req.url === '/api/v2/skills/demo-finchip/manage/instruction' && req.method === 'DELETE') {
         instructionManifest = null;
         res.end(JSON.stringify({ manifest: null }));
         return;

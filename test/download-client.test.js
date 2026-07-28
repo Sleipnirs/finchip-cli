@@ -33,7 +33,7 @@ test('source manifest is cookie-first and falls back to the canonical signed vie
     address: WALLET,
     async signMessage({ message }) {
       assert.match(message, /^FinChip V2\nAction: skill_detail_viewer/m);
-      assert.match(message, /Slug: demo_finchip/);
+      assert.match(message, /Slug: demo-finchip/);
       assert.match(message, /Wallet: 0x2222/);
       return '0xsigned';
     },
@@ -48,12 +48,52 @@ test('source manifest is cookie-first and falls back to the canonical signed vie
   });
 
   assert.equal(manifest.kind, 'ipfs_plain');
+  assert.equal(calls[0].path, '/api/v2/skills/demo-finchip/source/manifest');
   assert.deepEqual(calls[0].body, { addr: CHIP, chainId: 56 });
   assert.equal(calls[1].body.wallet_addr, WALLET);
   assert.equal(calls[1].body.signature, '0xsigned');
   assert.equal(calls[1].body.timestamp, 1234);
   assert.equal(calls[1].body.signature_chain_id, 56);
   assert.match(calls[1].body.content_hash, /^[0-9a-f]{64}$/);
+});
+
+test('source manifest normalizes a legacy FinChip slug in both URL and viewer signature', async () => {
+  const calls = [];
+  const client = {
+    origin: 'https://finchip.ai',
+    async json(path, options) {
+      calls.push({ path, body: JSON.parse(options.body) });
+      if (calls.length === 1) {
+        return { response: { ok: false, status: 401 }, payload: { error: 'sign' } };
+      }
+      return {
+        response: { ok: true, status: 200 },
+        payload: {
+          kind: 'ipfs_plain',
+          files: [{ name: 'SKILL.md', path: 'ipfs://x', encrypted: false }],
+          packageDownloadUrl: '/api/v2/skills/demo/source?token=secret',
+        },
+      };
+    },
+  };
+  const account = {
+    address: WALLET,
+    async signMessage({ message }) {
+      assert.match(message, /Slug: demo-finchip/);
+      return '0xsigned';
+    },
+  };
+
+  await requestSourceManifest({
+    client,
+    slug: 'demo_finchip',
+    deployment: { addr: CHIP, chainId: 56 },
+    account,
+    now: () => 1234,
+  });
+
+  assert.equal(calls[0].path, '/api/v2/skills/demo-finchip/source/manifest');
+  assert.equal(calls[1].path, '/api/v2/skills/demo-finchip/source/manifest');
 });
 
 test('signed source fallback requires a wallet while license failures preserve stable codes', async () => {

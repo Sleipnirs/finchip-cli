@@ -1,6 +1,7 @@
 import { getAddress, isAddress } from 'viem';
 import { normalizeApiOrigin } from './auth-client.js';
 import { resolveChain } from './chains.js';
+import { siteLookupSlug } from './skill-slug.js';
 import { CliError } from './utils.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -73,7 +74,7 @@ function mapPublicDetail(requestedSlug, payload) {
 
   return {
     requestedSlug,
-    canonicalSlug: skill.slug,
+    canonicalSlug: siteLookupSlug(skill.slug),
     skill: {
       id: nullable(skill.id),
       title: nullable(skill.title),
@@ -154,8 +155,9 @@ export class SkillDetailClient {
         3
       );
     }
+    const lookupSlug = siteLookupSlug(requestedSlug);
     const requestedDeployment = parsePublicDeploymentOptions(options);
-    const url = new URL(`/api/v2/skills/${encodeURIComponent(requestedSlug)}`, `${this.origin}/`);
+    const url = new URL(`/api/v2/skills/${encodeURIComponent(lookupSlug)}`, `${this.origin}/`);
     if (requestedDeployment) {
       url.searchParams.set('addr', requestedDeployment.contractAddr);
       url.searchParams.set('chainId', String(requestedDeployment.chainId));
