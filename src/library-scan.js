@@ -26,25 +26,35 @@ function normalizedAddress(value) {
   return getAddress(String(value).toLowerCase());
 }
 
+function normalizedCatalogSlug(slug) {
+  try {
+    return { value: siteLookupSlug(slug), normalized: true };
+  } catch {
+    return { value: slug, normalized: false };
+  }
+}
+
 function validateCatalogRow(row) {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
   const contractAddr = normalizedAddress(row.contract_addr ?? row.contractAddr);
   const creatorAddr = normalizedAddress(row.creator_addr ?? row.creatorAddr);
   const chainId = Number(row.chain_id ?? row.chainId);
   const slug = typeof row.slug === 'string' ? row.slug.trim() : '';
-  if (!contractAddr || contractAddr.toLowerCase() === ZERO_ADDRESS || !creatorAddr) return null;
+  if (!contractAddr || contractAddr.toLowerCase() === ZERO_ADDRESS) return null;
   if (!Number.isInteger(chainId) || chainId <= 0 || !slug) return null;
   if (
     (row.price_wei ?? row.priceWei) != null
     && typeof (row.price_wei ?? row.priceWei) !== 'string'
     && typeof (row.price_wei ?? row.priceWei) !== 'number'
   ) return null;
+  const catalogSlug = normalizedCatalogSlug(slug);
   return {
     id: row.id ?? null,
     contractAddr,
     chainId,
     name: typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug,
-    slug: siteLookupSlug(slug),
+    slug: catalogSlug.value,
+    slugNormalized: catalogSlug.normalized,
     creatorAddr,
     priceWei: row.price_wei ?? row.priceWei ?? null,
     sourceUrl: typeof (row.source_url ?? row.sourceUrl) === 'string'
@@ -384,6 +394,18 @@ async function scanChain({ chain, chips, walletAddress, client }) {
     });
   }
 
+  for (const holding of holdings) {
+    if (!holding.slugNormalized) {
+      warnings.push({
+        code: 'CATALOG_SLUG_UNNORMALIZED',
+        chainId: holding.chainId,
+        contractAddr: holding.contractAddr,
+        slug: holding.slug,
+        message: 'Catalog slug cannot be converted to the public FinChip slug format; the original value is retained.',
+      });
+    }
+  }
+
   let metadataFailed = 0;
   if (holdings.length) {
     const metadata = await batchedMulticall(
@@ -399,11 +421,11 @@ async function scanChain({ chain, chips, walletAddress, client }) {
         : null;
       const price = bigintResult(result?.[1]);
       holding.metadataSource = {
-        creator: creator ? 'chain' : 'catalog',
+        creator: creator ? 'chain' : holding.creatorAddr ? 'catalog' : 'unavailable',
         price: price != null ? 'chain' : 'unavailable',
       };
       if (creator) {
-        if (creator.toLowerCase() !== holding.creatorAddr.toLowerCase()) {
+        if (holding.creatorAddr && creator.toLowerCase() !== holding.creatorAddr.toLowerCase()) {
           warnings.push(warning(
             'CATALOG_STALE',
             chain.id,
@@ -417,7 +439,9 @@ async function scanChain({ chain, chips, walletAddress, client }) {
         warnings.push(warning(
           'METADATA_PARTIAL',
           chain.id,
-          'On-chain creator could not be read; the catalog creator is retained.',
+          holding.creatorAddr
+            ? 'On-chain creator could not be read; the catalog creator is retained.'
+            : 'On-chain creator could not be read and the catalog did not contain a complete address.',
           holding.contractAddr,
         ));
       }
@@ -509,16 +533,24 @@ export async function scanLibrary({
   }
   const catalogRows = [...catalogByDeployment.values()];
   const warnings = [];
+  const unselectedByChain = new Map();
   const rows = catalogRows.filter(row => {
     if (selectedChainIds.has(row.chainId)) return true;
-    warnings.push(warning(
-      'UNSUPPORTED_CATALOG_CHAIN',
-      row.chainId,
-      'The active catalog contains a chain unsupported by this CLI.',
-      row.contractAddr,
-    ));
+    if (chains.length > 1) {
+      unselectedByChain.set(row.chainId, (unselectedByChain.get(row.chainId) ?? 0) + 1);
+    }
     return false;
   });
+  for (const [chainId, candidateCount] of unselectedByChain) {
+    warnings.push({
+      ...warning(
+        'UNSUPPORTED_CATALOG_CHAIN',
+        chainId,
+        `The active catalog contains ${candidateCount} Chip candidate(s) on a chain unsupported by this CLI.`,
+      ),
+      candidateCount,
+    });
+  }
 
   const chainResults = [];
   for (const chain of chains) {
@@ -537,7 +569,9 @@ export async function scanLibrary({
     throw catalogFailure('No requested chain produced a trustworthy Library scan.');
   }
   const holdings = chainResults.flatMap(result => result.holdings).map(serializeHolding);
-  const complete = warnings.every(entry => entry.code === 'CATALOG_STALE')
+  const complete = warnings.every(entry =>
+    entry.code === 'CATALOG_STALE'
+      || entry.code === 'CATALOG_SLUG_UNNORMALIZED')
     && chainResults.every(result => result.complete);
   const totals = {
     holdings: holdings.length,
