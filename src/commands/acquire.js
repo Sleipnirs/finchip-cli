@@ -1,6 +1,6 @@
 import { formatEther, isAddress, parseEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { loadConfig, resolveConfiguredPrivateKey } from '../config.js';
+import { loadConfig, resolveWalletPrivateKey } from '../config.js';
 import { getPublicClient, getWalletClient } from '../client.js';
 import { resolveChain } from '../chains.js';
 import { CHIP_ABI, CHIP_721_ABI, IFACE_ID } from '../protocol.js';
@@ -31,7 +31,7 @@ class AcquireError extends CliError {
 const DEFAULT_DEPENDENCIES = {
   detailClient: null,
   loadConfig,
-  resolvePrivateKey: resolveConfiguredPrivateKey,
+  resolvePrivateKey: resolveWalletPrivateKey,
   accountFromPrivateKey: privateKeyToAccount,
   publicClientFactory: getPublicClient,
   walletClientFactory: getWalletClient,
@@ -393,11 +393,24 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...providedDependencies };
   const deployment = await resolveDeployment(options, dependencies);
   const cfg = dependencies.loadConfig();
-  const privateKey = dependencies.resolvePrivateKey(cfg);
+  let privateKey;
+  try {
+    privateKey = dependencies.resolvePrivateKey(cfg);
+  } catch (error) {
+    if (error?.code?.startsWith('WALLET_')) {
+      error.details = {
+        ...(error.details || {}),
+        slug: deployment.slug,
+        chainId: deployment.chain.id,
+        contractAddr: deployment.contractAddr,
+      };
+    }
+    throw error;
+  }
   if (!privateKey) {
     throw new AcquireError(
-      'WALLET_REQUIRED',
-      'Set a valid FINCHIP_PRIVATE_KEY before acquiring a Skill.',
+      'WALLET_KEY_MISSING',
+      'No Agent wallet is configured. Run `finchip wallet create` or `finchip wallet use --file <path>`.',
       3,
       {
         slug: deployment.slug,

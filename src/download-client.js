@@ -83,7 +83,7 @@ export async function requestSourceManifest({
   if (first.response.ok) return validateSourceManifest(first.payload);
   if (first.response.status !== 401) throw sourceError(first.response, first.payload);
   if (!account) {
-    throw new DownloadError('AUTH_REQUIRED', 'Run `finchip login` or configure FINCHIP_PRIVATE_KEY to prove wallet ownership.', 2);
+    throw new DownloadError('AUTH_REQUIRED', 'Run `finchip login` or configure an Agent wallet to prove wallet ownership.', 2);
   }
 
   const timestamp = now();

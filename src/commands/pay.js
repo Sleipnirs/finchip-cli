@@ -9,7 +9,7 @@
 // If --dry-run, the CLI does NOT sign or retry — it just prints what it would
 // pay and where, so users can inspect challenges safely.
 
-import { loadConfig, getPrivateKey } from '../config.js';
+import { loadConfig, resolveWalletPrivateKey } from '../config.js';
 import { getWalletClient } from '../client.js';
 import { probe, selectAccepts, signPayment, retryWithPayment, pay as x402Pay } from '../x402.js';
 import { resolveChain } from '../chains.js';
@@ -69,10 +69,11 @@ export async function cmdPay(url, options) {
   // 2. Need wallet to proceed (even for dry-run — to check USDC balance)
   let privateKey;
   try {
-    privateKey = getPrivateKey(cfg);
-  } catch {
-    err('Need FINCHIP_PRIVATE_KEY to evaluate which chain has USDC balance.');
-    process.exit(1);
+    privateKey = resolveWalletPrivateKey(cfg);
+  } catch (error) {
+    err(`[${error?.code || 'WALLET_KEY_MISSING'}] ${error?.message || 'No Agent wallet is configured.'}`);
+    process.exitCode = error?.exitCode || 3;
+    return;
   }
 
   // We need a wallet client; pick chain from first accepts entry for the client.

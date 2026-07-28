@@ -2,7 +2,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 
 import { FinchipAuthClient, FinchipAuthError } from '../auth-client.js';
 import { getPublicClient, getWalletClient } from '../client.js';
-import { loadConfig, resolveConfiguredPrivateKey } from '../config.js';
+import { loadConfig, resolveWalletPrivateKey, WalletKeyError } from '../config.js';
 import {
   AttestationError,
   executeCreatorAttestation,
@@ -16,6 +16,7 @@ function fail(options, error) {
   const normalized = error instanceof AttestationError
     || error instanceof ManageError
     || error instanceof FinchipAuthError
+    || error instanceof WalletKeyError
     ? error
     : new AttestationError(
         'ATTESTATION_VERIFY_FAILED',
@@ -40,10 +41,7 @@ export async function cmdSkillManageAttest(slug, options = {}) {
       );
     }
     const cfg = loadConfig();
-    const privateKey = resolveConfiguredPrivateKey(cfg);
-    if (!privateKey) {
-      throw new AttestationError('WALLET_MISMATCH', 'Set a valid FINCHIP_PRIVATE_KEY for Creator Attestation.', 3);
-    }
+    const privateKey = resolveWalletPrivateKey(cfg);
     const account = privateKeyToAccount(privateKey);
     const client = new FinchipAuthClient();
     const session = await client.requireSession({ walletRequired: true });
@@ -51,7 +49,7 @@ export async function cmdSkillManageAttest(slug, options = {}) {
     if (!loggedInWallet || loggedInWallet.toLowerCase() !== account.address.toLowerCase()) {
       throw new AttestationError(
         'WALLET_MISMATCH',
-        'Site login wallet and FINCHIP_PRIVATE_KEY wallet must match.',
+        'Site login wallet and configured Agent wallet must match.',
         3,
       );
     }

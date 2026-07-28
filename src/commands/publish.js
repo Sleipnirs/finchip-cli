@@ -3,7 +3,7 @@ import { basename, extname, resolve } from 'path';
 import { formatEther, parseEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { FinchipAuthClient } from '../auth-client.js';
-import { loadConfig, resolveConfiguredPrivateKey } from '../config.js';
+import { loadConfig, resolveWalletPrivateKey } from '../config.js';
 import { getPublicClient, getWalletClient } from '../client.js';
 import { resolveProtocol } from '../discovery.js';
 import { resolveChain } from '../chains.js';
@@ -146,10 +146,7 @@ async function authenticatedContext(expectedWallet = null) {
     details: { stage: 'auth' },
   });
   const cfg = loadConfig();
-  const privateKey = resolveConfiguredPrivateKey(cfg);
-  if (!privateKey) {
-    throw new PublishError('WALLET_MISMATCH', 'Set a valid FINCHIP_PRIVATE_KEY before publishing.', 3, 'auth');
-  }
+  const privateKey = resolveWalletPrivateKey(cfg);
   const account = privateKeyToAccount(privateKey);
   const sessionWallet = session.wallet.walletAddr.toLowerCase();
   if (account.address.toLowerCase() !== sessionWallet || (expectedWallet && expectedWallet.toLowerCase() !== sessionWallet)) {
