@@ -42,9 +42,13 @@ finchip wallet use --file ~/.finchip/wallets/agent.key
 finchip wallet create --file ~/.finchip/wallets/agent-2.key
 ```
 
-`wallet use` 只验证并记录用户提供文件的绝对路径，不复制文件，也不修改该文件或父目录的权限。私钥文件接受带或不带 `0x` 的 64 位十六进制内容。CLI 只把地址、签名和交易发送给 Site，不发送私钥。
+`wallet use` 会验证并记录用户提供文件的绝对路径，不复制文件，也不修改该文件或父目录的权限；若当前登录属于另一钱包，还会自动注销旧 session。私钥文件接受带或不带 `0x` 的 64 位十六进制内容。CLI 只把地址、签名和交易发送给 Site，不发送私钥。
 
-钱包解析优先级为 `FINCHIP_PRIVATE_KEY`、`FINCHIP_PRIVATE_KEY_FILE`、config 中经 `wallet use` 验证的 key-file 路径、最后是 legacy `config.privateKey`。前两个变量仅用于临时 Agent/CI runtime；主路径是 key file。历史明文配置可运行：
+钱包只使用 config 中经 `wallet use` 验证的 key-file 路径；历史
+`config.privateKey` 仅保留迁移兼容。`FINCHIP_PRIVATE_KEY` 和
+`FINCHIP_PRIVATE_KEY_FILE` 已弃用且不再作为私钥来源。登录或签名命令发现任意
+非空旧变量时会返回 `WALLET_ENV_DISABLED`，明确要求从当前环境清除，避免临时
+覆盖造成签名钱包与登录账号分裂。历史明文配置可运行：
 
 ```bash
 finchip wallet migrate
@@ -393,7 +397,11 @@ finchip config unset rpc
 
 钱包使用 `finchip wallet create/use/status/migrate` 管理。`finchip config set privateKey`
 和直接设置 `privateKeyFile` 会被拒绝；后者必须经过 `wallet use` 的格式与地址验证。
-`FINCHIP_PRIVATE_KEY` 与 `FINCHIP_PRIVATE_KEY_FILE` 只保留给临时 Agent/CI runtime。
+`FINCHIP_PRIVATE_KEY` 与 `FINCHIP_PRIVATE_KEY_FILE` 已禁用。切换钱包统一使用
+`finchip wallet use --file <path>`；若现有 Cookie session 属于另一个钱包，
+CLI 会先尝试注销该 session，并始终清除本地旧 Cookie。相同钱包的 session 会保留。
+`wallet status/use/create/migrate` 不会被陈旧变量阻断，也绝不会读取其值；它们会
+返回 `ready: false` 和 `blockedBy` 变量名，提醒先清理环境再执行登录或签名命令。
 
 历史配置中的 `pinataJwt` 不再被发布流程使用，但仍始终作为敏感字段遮罩，避免旧 secret 被 `config get` 输出。
 

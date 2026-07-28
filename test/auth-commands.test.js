@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -106,11 +106,19 @@ test('login, status, repeated login, and logout complete the cookie lifecycle', 
   const dir = mkdtempSync(join(tmpdir(), 'finchip-auth-command-'));
   const walletPath = join(dir, 'agent.key');
   writeFileSync(walletPath, `${PRIVATE_KEY}\n`);
+  mkdirSync(join(dir, '.finchip'), { recursive: true });
+  writeFileSync(join(dir, '.finchip', 'config.json'), JSON.stringify({
+    privateKeyFile: walletPath,
+    wallet: WALLET_ADDR,
+    chain: 56,
+  }, null, 2));
   const env = {
+    HOME: dir,
+    USERPROFILE: dir,
     FINCHIP_API_URL: origin,
     FINCHIP_CREDENTIALS_PATH: join(dir, 'credentials.json'),
     FINCHIP_PRIVATE_KEY: '',
-    FINCHIP_PRIVATE_KEY_FILE: walletPath,
+    FINCHIP_PRIVATE_KEY_FILE: '',
   };
 
   try {

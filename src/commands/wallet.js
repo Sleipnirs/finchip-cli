@@ -14,7 +14,11 @@ import {
   writeNewPrivateTextFile,
 } from '../private-files.js';
 import {
+  FinchipAuthClient,
+} from '../auth-client.js';
+import {
   WalletKeyError,
+  deprecatedWalletEnvironmentVariables,
   defaultWalletPath,
   inspectWalletSource,
   normalizeWalletPrivateKey,
@@ -95,6 +99,83 @@ function fail(options, error) {
   });
 }
 
+function walletEnvironmentState(env = process.env) {
+  const blockedBy = deprecatedWalletEnvironmentVariables(env);
+  return {
+    ready: blockedBy.length === 0,
+    blockedBy,
+  };
+}
+
+function warnDeprecatedWalletEnvironment(result) {
+  if (!result.blockedBy.length) return;
+  wrn(
+    `${result.blockedBy.join(', ')} ${result.blockedBy.length === 1 ? 'is' : 'are'} deprecated and ignored by wallet management. `
+    + 'Remove the deprecated environment variable before running login or signing commands.',
+  );
+}
+
+function sessionWalletAddress(session) {
+  const value = session?.wallet?.walletAddr ?? session?.identity?.walletAddr;
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value)
+    ? value
+    : null;
+}
+
+async function alignSessionBeforeWalletSwitch(address, client = new FinchipAuthClient()) {
+  if (!client.hasPersistedCredentials()) {
+    return {
+      sessionAction: 'none',
+      previousSessionWallet: null,
+      remoteRevoked: null,
+    };
+  }
+
+  let session;
+  try {
+    session = await client.getSession();
+  } catch {
+    client.clearCredentials();
+    return {
+      sessionAction: 'cleared-unverified',
+      previousSessionWallet: null,
+      remoteRevoked: false,
+    };
+  }
+
+  const previousSessionWallet = sessionWalletAddress(session);
+  if (
+    session?.authenticated
+    && previousSessionWallet
+    && previousSessionWallet.toLowerCase() === address.toLowerCase()
+  ) {
+    return {
+      sessionAction: 'preserved',
+      previousSessionWallet,
+      remoteRevoked: null,
+    };
+  }
+
+  let remoteRevoked = false;
+  if (session?.authenticated) {
+    try {
+      const { response } = await client.json('/api/auth/logout', {
+        method: 'POST',
+        persistCookies: false,
+      });
+      remoteRevoked = response.ok;
+    } catch {
+      remoteRevoked = false;
+    }
+  }
+  client.clearCredentials();
+  return {
+    sessionAction: session?.authenticated ? 'logged-out' : 'cleared-expired',
+    previousSessionWallet,
+    remoteRevoked,
+  };
+}
+
 export function createAgentWallet(options = {}, dependencies = {}) {
   const path = resolveWalletPath(options.file);
   const privateKey = (dependencies.generatePrivateKey || generatePrivateKey)();
@@ -121,7 +202,10 @@ export function createAgentWallet(options = {}, dependencies = {}) {
 
 export async function cmdWalletCreate(options = {}) {
   try {
-    const result = createAgentWallet(options);
+    const result = {
+      ...createAgentWallet(options),
+      ...walletEnvironmentState(),
+    };
     emitResult(options, result, () => {
       hd('FinChip CLI — Agent wallet');
       sep();
@@ -129,6 +213,7 @@ export async function cmdWalletCreate(options = {}) {
       inf(`address: ${result.address}`);
       inf(`key file: ${result.path}`);
       wrn('This file contains an unencrypted private key. Keep it private and fund it only with a small Agent budget.');
+      warnDeprecatedWalletEnvironment(result);
     });
   } catch (error) {
     fail(options, error);
@@ -140,6 +225,7 @@ export async function cmdWalletUse(options = {}) {
     const path = resolveWalletPath(options.file);
     const privateKey = readWalletPrivateKey(path);
     const address = privateKeyToAccount(privateKey).address;
+    const session = await alignSessionBeforeWalletSwitch(address);
     try {
       const cfg = loadConfig();
       saveConfig({ ...cfg, privateKeyFile: path, wallet: address });
@@ -155,12 +241,23 @@ export async function cmdWalletUse(options = {}) {
       address,
       path,
       source: 'config-file',
+      ...session,
+      ...walletEnvironmentState(),
     };
     emitResult(options, result, () => {
       ok('Selected Agent wallet');
       inf(`address: ${address}`);
       inf(`key file: ${path}`);
       inf('The provided key file was not copied and its permissions were not changed.');
+      warnDeprecatedWalletEnvironment(result);
+      if (result.sessionAction === 'logged-out') {
+        wrn('The previous FinChip session belonged to another wallet and was logged out.');
+      } else if (
+        result.sessionAction === 'cleared-unverified'
+        || result.sessionAction === 'cleared-expired'
+      ) {
+        wrn('The previous FinChip session could not be confirmed and was cleared locally.');
+      }
     });
   } catch (error) {
     fail(options, error);
@@ -169,7 +266,7 @@ export async function cmdWalletUse(options = {}) {
 
 export async function cmdWalletStatus(options = {}) {
   try {
-    const selected = inspectWalletSource(loadConfig());
+    const selected = inspectWalletSource(loadConfig(), { env: {} });
     const result = {
       ok: true,
       code: 'WALLET_STATUS',
@@ -177,6 +274,7 @@ export async function cmdWalletStatus(options = {}) {
       address: selected.address,
       source: selected.source,
       path: selected.path,
+      ...walletEnvironmentState(),
     };
     emitResult(options, result, () => {
       hd('FinChip CLI — Agent wallet');
@@ -185,6 +283,7 @@ export async function cmdWalletStatus(options = {}) {
       inf(`address: ${selected.address}`);
       inf(`source:  ${selected.source}`);
       if (selected.path) inf(`key file: ${selected.path}`);
+      warnDeprecatedWalletEnvironment(result);
     });
   } catch (error) {
     fail(options, error);
@@ -251,11 +350,15 @@ export function migrateLegacyWallet(options = {}, dependencies = {}) {
 
 export async function cmdWalletMigrate(options = {}) {
   try {
-    const result = migrateLegacyWallet(options);
+    const result = {
+      ...migrateLegacyWallet(options),
+      ...walletEnvironmentState(),
+    };
     emitResult(options, result, () => {
       ok('Migrated legacy config.privateKey to an Agent wallet key file');
       inf(`address: ${result.address}`);
       inf(`key file: ${result.path}`);
+      warnDeprecatedWalletEnvironment(result);
       wrn('Rewriting config does not securely erase copies from disk history, backups, editors, or cloud sync.');
       wrn('If this wallet holds meaningful assets, treat the old plaintext as potentially exposed and use a new wallet.');
     });

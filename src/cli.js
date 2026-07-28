@@ -80,7 +80,7 @@ wallet
 
 wallet
   .command('use')
-  .description('Select an existing private-key file without copying or changing it')
+  .description('Select an existing key file and log out a session for a different wallet')
   .requiredOption('--file <path>', 'Existing private-key file')
   .option('--json', 'Emit machine-readable JSON')
   .action(cmdWalletUse);
