@@ -11,7 +11,7 @@ import { homedir } from 'os';
 import { basename, dirname, extname, join, resolve } from 'path';
 import { zipSync } from 'fflate';
 import { writePrivateTextFile } from './private-files.js';
-export { canonicalSlug, siteCanonicalSlug } from './skill-slug.js';
+export { canonicalSlug, siteCanonicalSlug, siteLookupSlug } from './skill-slug.js';
 
 export const DEFAULT_CHIP_LOGO_URI = 'ipfs://bafybeiaal47ha2ovfvttgiox4a6xzo4hes4kavjtpuhkrpagud5wjj7yl4';
 export const PRIMARY_MAX_ENCRYPTED_BYTES = 2 * 1024 * 1024;

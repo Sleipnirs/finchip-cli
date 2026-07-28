@@ -74,7 +74,7 @@ test('plain download resolves the canonical deployment, uses cookie access, and 
         }));
         return;
       }
-      if (req.url === '/api/v2/skills/demo_finchip') {
+      if (req.url === '/api/v2/skills/demo-finchip') {
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({
           skill: { slug: 'demo_finchip', chip_address: CHIP, chain_id: 56 },
@@ -82,17 +82,17 @@ test('plain download resolves the canonical deployment, uses cookie access, and 
         }));
         return;
       }
-      if (req.url === '/api/v2/skills/demo_finchip/source/manifest' && req.method === 'POST') {
+      if (req.url === '/api/v2/skills/demo-finchip/source/manifest' && req.method === 'POST') {
         assert.deepEqual(body, { addr: CHIP, chainId: 56 });
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({
           kind: 'ipfs_plain',
           files: [{ name: 'SKILL.md', path: 'ipfs://demo', encrypted: false }],
-          packageDownloadUrl: '/api/v2/skills/demo_finchip/source?token=one-use',
+          packageDownloadUrl: '/api/v2/skills/demo-finchip/source?token=one-use',
         }));
         return;
       }
-      if (req.url === '/api/v2/skills/demo_finchip/source?token=one-use') {
+      if (req.url === '/api/v2/skills/demo-finchip/source?token=one-use') {
         const content = Buffer.from('# downloaded\n');
         res.setHeader('Content-Type', 'text/markdown');
         res.setHeader('Content-Disposition', 'attachment; filename="SKILL.md"');

@@ -11,3 +11,11 @@ export function canonicalSlug(value) {
 export function siteCanonicalSlug(value) {
   return canonicalSlug(value).replace(/_finchip$/, '-finchip');
 }
+
+export function siteLookupSlug(value) {
+  const requested = String(value ?? '').trim();
+  if (!requested) throw new Error('Slug is required.');
+  return /(?:_|-)finchip$/i.test(requested)
+    ? siteCanonicalSlug(requested)
+    : requested;
+}

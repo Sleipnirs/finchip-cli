@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { DownloadError } from './download-decryption.js';
+import { siteLookupSlug } from './skill-slug.js';
 
 export { DownloadError };
 
@@ -67,7 +68,8 @@ export async function requestSourceManifest({
   account,
   now = Date.now,
 }) {
-  const path = `/api/v2/skills/${encodeURIComponent(slug)}/source/manifest`;
+  const lookupSlug = siteLookupSlug(slug);
+  const path = `/api/v2/skills/${encodeURIComponent(lookupSlug)}/source/manifest`;
   const baseBody = { addr: deployment.addr, chainId: deployment.chainId };
   let first;
   try {
@@ -88,8 +90,8 @@ export async function requestSourceManifest({
 
   const timestamp = now();
   const wallet = account.address.toLowerCase();
-  const contentHash = sha256Text(canonicalSkillViewerContent({ slug, ...baseBody }));
-  const message = buildV2WriteMessage({ slug, wallet, contentHash, timestamp });
+  const contentHash = sha256Text(canonicalSkillViewerContent({ slug: lookupSlug, ...baseBody }));
+  const message = buildV2WriteMessage({ slug: lookupSlug, wallet, contentHash, timestamp });
   let signature;
   try {
     signature = await account.signMessage({ message });

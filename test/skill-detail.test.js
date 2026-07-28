@@ -96,7 +96,7 @@ test('public detail is anonymous, canonical, and maps a stable consumer result',
   assert.equal(calls[0].init.headers.has('Authorization'), false);
   assert.equal(calls[0].init.headers.has('Origin'), false);
   assert.equal(result.requestedSlug, 'alias');
-  assert.equal(result.canonicalSlug, 'audit_finchip');
+  assert.equal(result.canonicalSlug, 'audit-finchip');
   assert.equal(result.skill.author, 'victor');
   assert.equal(result.deployment.acquirable, true);
   assert.equal(result.deployment.chainId, 56);
@@ -106,6 +106,26 @@ test('public detail is anonymous, canonical, and maps a stable consumer result',
     campaign: { id: 'campaign-1' },
   });
   assert.equal(result.viewer, null);
+});
+
+test('public detail normalizes legacy FinChip slugs but preserves Web2 lookup slugs', async () => {
+  const paths = [];
+  const client = new SkillDetailClient({
+    fetchImpl: async url => {
+      paths.push(new URL(url).pathname);
+      return jsonResponse(detailPayload({ slug: 'my-skill-finchip' }));
+    },
+  });
+
+  const legacy = await client.get('My---Skill_finchip');
+  await client.get('Musk-Skill');
+
+  assert.deepEqual(paths, [
+    '/api/v2/skills/my-skill-finchip',
+    '/api/v2/skills/Musk-Skill',
+  ]);
+  assert.equal(legacy.requestedSlug, 'My---Skill_finchip');
+  assert.equal(legacy.canonicalSlug, 'my-skill-finchip');
 });
 
 test('public detail uses the same effective display overrides as the Site', async () => {
@@ -196,7 +216,7 @@ test('skill show CLI remains anonymous even when local login cookies exist', asy
     assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.code, 'SKILL_PUBLIC_DETAIL');
-    assert.equal(payload.canonicalSlug, 'audit_finchip');
+    assert.equal(payload.canonicalSlug, 'audit-finchip');
     assert.equal(observed.url, '/api/v2/skills/alias');
     assert.equal(observed.cookie, undefined);
     assert.equal(observed.authorization, undefined);
