@@ -189,9 +189,10 @@ trade
 // ── Operate · library ────────────────────────────────────────────────────────
 program
   .command('library')
-  .description('Show all chips you hold across all supported chains')
+  .description('Show active-catalog Skill holdings with batched on-chain verification')
   .option('--wallet <addr>',   'Wallet address (defaults to one derived from private key)')
   .option('--chain <chainId>', 'Filter to a single chain')
+  .option('--json',            'Emit machine-readable JSON')
   .action(cmdLibrary);
 
 // ── Configure ────────────────────────────────────────────────────────────────

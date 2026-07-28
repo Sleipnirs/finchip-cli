@@ -300,9 +300,27 @@ finchip acquire --slug audit-pro-finchip --dry-run
 finchip acquire --slug audit-pro-finchip --chain bsc --addr 0x1111111111111111111111111111111111111111 --yes
 finchip library
 finchip library --chain bsc
+finchip library --chain optimism --json
 ```
 
 Market 会通过 ERC-165 区分 ERC-1155 与 ERC-721。ERC-721 使用 `forkPrice / totalForked / maxForks`，不会按 ERC-1155 getter 读取。
+
+`library` 的范围是 Site 当前活跃且可交易的 Chip 目录，不包含 inactive、orphan
+或尚未进入 Site 的部署。目录请求是匿名公共读取，不携带 Cookie、Authorization、
+Origin、钱包地址或签名。CLI 按链固定一个区块快照，每 100 个合约通过 Multicall
+同时读取 ERC-1155 token 0/1 余额；只有两个 ERC-1155 调用都失败的地址才回退
+ERC-721 `balanceOf(wallet)`，不会为几千个 ERC-1155 预先做 ERC-721 类型扫描。
+
+只对确认持有的少量 Chip 再从链上读取权威 `creator()` 与精确
+`licensePrice/forkPrice`。若 Site 目录值滞后，链上值优先并返回
+`CATALOG_STALE` warning。价格陈旧检测是 best-effort：Site 返回的
+`price_wei` 可能已经以 JavaScript number 表示，超过安全整数范围后 CLI 不会拿
+可能失真的值作精确比较，因此部分较大价格变化可能没有该 warning；输出的
+`priceWei` 始终来自链上权威读取，不受此限制。部分 RPC 结果无法确认时，
+`library --json` 仍以退出码 0 返回可信持仓，并使用
+`code: "LIBRARY_PARTIAL"`、`complete: false` 和 `warnings` 披露缺口；Site
+目录不可用或没有任何目标链得到可信扫描时才返回
+`LIBRARY_SERVICE_UNAVAILABLE`。
 
 二级市场：
 
