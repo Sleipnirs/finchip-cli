@@ -310,6 +310,11 @@ Market 会通过 ERC-165 区分 ERC-1155 与 ERC-721。ERC-721 使用 `forkPrice
 Origin、钱包地址或签名。CLI 按链固定一个区块快照，每 100 个合约通过 Multicall
 同时读取 ERC-1155 token 0/1 余额；只有两个 ERC-1155 调用都失败的地址才回退
 ERC-721 `balanceOf(wallet)`，不会为几千个 ERC-1155 预先做 ERC-721 类型扫描。
+实际持仓对应的历史目录 slug 如果无法转换成当前公共格式，CLI 会保留原始值并
+返回 `CATALOG_SLUG_UNNORMALIZED` warning；未持有的目录条目不会产生该告警。
+该展示字段不会阻断或降低链上持仓扫描的完整性。目录中的 creator 地址缺失或
+被脱敏时不会为未持有的 Chip 产生噪音；实际持仓会使用链上 `creator()` 补全，
+只有链上读取也失败时才通过 `METADATA_PARTIAL` 披露。
 
 只对确认持有的少量 Chip 再从链上读取权威 `creator()` 与精确
 `licensePrice/forkPrice`。若 Site 目录值滞后，链上值优先并返回

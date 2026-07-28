@@ -258,6 +258,64 @@ test('public catalog client is anonymous, deduplicates addresses, and rejects ma
   );
 });
 
+test('degraded catalog metadata stays scannable without warnings for unheld entries', async () => {
+  const rows = [
+    chip(1, { slug: ':)_finchip' }),
+    chip(2, { slug: '谷歌抓包插件_finchip' }),
+    chip(3, { creator_addr: '0x6573...1f7b' }),
+    chip(4, { chain_id: 8453, creator_addr: null }),
+  ];
+  const catalogClient = new LibraryCatalogClient({
+    fetchImpl: async () => new Response(JSON.stringify({ chips: rows })),
+  });
+  const client = mockPublicClient(contract => {
+    if (contract.functionName === 'balanceOf') return success(0n);
+    throw new Error(`Unexpected call: ${contract.functionName}`);
+  });
+
+  const result = await scanLibrary({
+    walletAddress: WALLET,
+    chains: [{ id: 56, name: 'BNB Smart Chain' }],
+    catalogClient,
+    publicClientFactory: () => client,
+  });
+
+  assert.equal(result.code, 'LIBRARY_COMPLETE');
+  assert.equal(result.complete, true);
+  assert.equal(result.totals.candidates, 3);
+  assert.equal(result.totals.failed, 0);
+  assert.deepEqual(result.warnings, []);
+});
+
+test('degraded slug warnings are limited to confirmed holdings', async () => {
+  const held = chip(1, { slug: ':)_finchip', creator_addr: '0x6573...1f7b' });
+  const unheld = chip(2, { slug: '谷歌抓包插件_finchip', creator_addr: null });
+  const client = mockPublicClient(contract => {
+    if (contract.functionName === 'balanceOf') {
+      const isHeld = contract.address.toLowerCase() === held.contract_addr.toLowerCase();
+      return success(isHeld && contract.args[1] === 1n ? 1n : 0n);
+    }
+    if (contract.functionName === 'creator') return success(CREATOR);
+    if (contract.functionName === 'licensePrice') return success(100n);
+    throw new Error(`Unexpected call: ${contract.functionName}`);
+  });
+
+  const result = await scanLibrary({
+    walletAddress: WALLET,
+    chains: [{ id: 56, name: 'BNB Smart Chain' }],
+    catalogClient: { list: async () => [held, unheld] },
+    publicClientFactory: () => client,
+  });
+
+  assert.equal(result.code, 'LIBRARY_COMPLETE');
+  assert.equal(result.complete, true);
+  assert.equal(result.holdings.length, 1);
+  assert.deepEqual(
+    result.warnings.map(warning => [warning.code, warning.slug]),
+    [['CATALOG_SLUG_UNNORMALIZED', ':)_finchip']],
+  );
+});
+
 test('public catalog client rejects redirects, upstream failures, and network errors', async () => {
   const responses = [
     new Response('', { status: 302, headers: { Location: 'https://other.test/' } }),
@@ -280,7 +338,7 @@ test('public catalog client rejects redirects, upstream failures, and network er
   );
 });
 
-test('library aggregates empty multi-chain scans and discloses unsupported catalog chains', async () => {
+test('library aggregates unsupported catalog entries into one warning per chain', async () => {
   const clients = new Map([
     [56, mockPublicClient(() => success(0n), { blockNumber: 56n })],
     [10, mockPublicClient(() => success(0n), { blockNumber: 10n })],
@@ -296,6 +354,7 @@ test('library aggregates empty multi-chain scans and discloses unsupported catal
         chip(1, { chain_id: 56 }),
         chip(2, { chain_id: 10 }),
         chip(3, { chain_id: 999 }),
+        chip(4, { chain_id: 999 }),
       ],
     },
     publicClientFactory: chainId => clients.get(chainId),
@@ -306,7 +365,10 @@ test('library aggregates empty multi-chain scans and discloses unsupported catal
   assert.equal(result.holdings.length, 0);
   assert.deepEqual(result.chains.map(chain => chain.snapshotBlock), ['56', '10']);
   assert.equal(result.totals.candidates, 2);
-  assert.ok(result.warnings.some(warning => warning.code === 'UNSUPPORTED_CATALOG_CHAIN'));
+  const unsupported = result.warnings.filter(warning => warning.code === 'UNSUPPORTED_CATALOG_CHAIN');
+  assert.equal(unsupported.length, 1);
+  assert.equal(unsupported[0].chainId, 999);
+  assert.equal(unsupported[0].candidateCount, 2);
 });
 
 test('library partial JSON remains usable and exits successfully', { concurrency: false }, async () => {
