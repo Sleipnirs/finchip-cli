@@ -1,9 +1,9 @@
 // FinChip CLI v0.3.0 — Config persistence (~/.finchip/config.json)
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
-import { c } from './utils.js';
 import { DEFAULT_CHAIN } from './chains.js';
+import { writePrivateTextFile } from './private-files.js';
 
 const CONFIG_DIR  = join(homedir(), '.finchip');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
@@ -14,7 +14,8 @@ const DEFAULTS = {
   wallet:     null,                  // agent wallet address (optional cache)
   chain:      DEFAULT_CHAIN,         // default chain ID
   rpc:        null,                  // custom RPC override (optional)
-  privateKey: null,                  // ⚠ env var preferred
+  privateKeyFile: null,              // Agent wallet key-file path
+  privateKey: null,                  // legacy plaintext config compatibility
   label:      null,                  // default label for register
   pinataJwt:  null,                  // legacy key; retained so old secrets remain masked
 };
@@ -29,37 +30,14 @@ export function loadConfig() {
 }
 
 export function saveConfig(cfg) {
-  if (!existsSync(CONFIG_DIR)) mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+  writePrivateTextFile(CONFIG_FILE, `${JSON.stringify(cfg, null, 2)}\n`);
 }
 
 export function getConfigPath() {
   return CONFIG_FILE;
 }
 
-// ── Private-key resolution (env var > config file) ──────────────────────────
-export function getPrivateKey(cfg) {
-  const key = configuredPrivateKey(cfg);
-  if (!key) {
-    console.error('');
-    console.error(`${c.red} ✗${c.reset} No private key found.`);
-    console.error(`${c.gray}   Set env var: ${c.reset}export FINCHIP_PRIVATE_KEY=0xYOUR_PRIVATE_KEY`);
-    console.error(`${c.gray}   Or run:      ${c.reset}finchip config set privateKey 0xYOUR_PRIVATE_KEY`);
-    console.error('');
-    process.exit(1);
-  }
-  return key;
-}
-
-export function resolveConfiguredPrivateKey(cfg = loadConfig()) {
-  const privateKey = configuredPrivateKey(cfg);
-  return privateKey && /^0x[0-9a-fA-F]{64}$/.test(privateKey) ? privateKey : null;
-}
-
-function configuredPrivateKey(cfg) {
-  const value = process.env.FINCHIP_PRIVATE_KEY || cfg.privateKey;
-  return value?.startsWith('0x') ? value : value ? `0x${value}` : null;
-}
+export { WalletKeyError, resolveWalletPrivateKey } from './wallet.js';
 
 // ── fc_key format conversion ─────────────────────────────────────────────────
 /**

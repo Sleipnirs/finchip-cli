@@ -32,6 +32,12 @@ import { cmdChains }                                        from '../src/command
 import { cmdDoctor }                                        from '../src/commands/doctor.js';
 import { cmdPay }                                           from '../src/commands/pay.js';
 import { cmdLogin, cmdStatus, cmdLogout }                    from '../src/commands/auth.js';
+import {
+  cmdWalletCreate,
+  cmdWalletMigrate,
+  cmdWalletStatus,
+  cmdWalletUse,
+} from '../src/commands/wallet.js';
 import { registerSkillCommands }                             from '../src/commands/skill.js';
 import { registerDeprecatedPublishCommands }                 from '../src/commands/deprecated.js';
 import { cmdDownload }                                       from '../src/commands/download.js';
@@ -62,6 +68,35 @@ program
   .description('Revoke and remove the active FinChip account session')
   .option('--json', 'Emit machine-readable JSON')
   .action(cmdLogout);
+
+const wallet = program.command('wallet').description('Create, select, inspect, or migrate a dedicated Agent wallet');
+
+wallet
+  .command('create')
+  .description('Create and select a new low-value Agent EOA key file')
+  .option('--file <path>', 'Key-file path (default: ~/.finchip/wallets/agent.key)')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdWalletCreate);
+
+wallet
+  .command('use')
+  .description('Select an existing private-key file without copying or changing it')
+  .requiredOption('--file <path>', 'Existing private-key file')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdWalletUse);
+
+wallet
+  .command('status')
+  .description('Show the active wallet source and public address without network access')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdWalletStatus);
+
+wallet
+  .command('migrate')
+  .description('Move legacy config.privateKey into a private key file')
+  .option('--file <path>', 'Destination key-file path')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdWalletMigrate);
 
 // ── Operate · market ─────────────────────────────────────────────────────────
 const market = program.command('market').description('Browse the legacy chain-scanned chip market');
@@ -160,7 +195,7 @@ program
   .action(cmdLibrary);
 
 // ── Configure ────────────────────────────────────────────────────────────────
-const config = program.command('config').description('Manage local CLI configuration; prefer environment variables for secrets');
+const config = program.command('config').description('Manage non-wallet local CLI configuration');
 
 config
   .command('get [key]')
@@ -169,7 +204,8 @@ config
 
 config
   .command('set <key> <value>')
-  .description('Set a config value; prefer FINCHIP_PRIVATE_KEY over persisted privateKey')
+  .description('Set a non-wallet config value')
+  .option('--json', 'Emit machine-readable JSON')
   .action(cmdConfigSet);
 
 config
@@ -234,7 +270,8 @@ program.addHelpText('after', `
 ${c.gray}Quick start — consume a Skill:${c.reset}
   finchip skill search "security audit"
   finchip skill show audit-pro-finchip
-  finchip login                        ${c.gray}# requires FINCHIP_PRIVATE_KEY in the process environment${c.reset}
+  finchip wallet create                ${c.gray}# create a low-value dedicated Agent wallet${c.reset}
+  finchip login
   finchip acquire --slug audit-pro-finchip --dry-run
   finchip acquire --slug audit-pro-finchip --yes
   finchip download audit-pro-finchip --json
@@ -243,7 +280,7 @@ ${c.gray}Agent safety:${c.reset}
   Use command-level --json for stable machine-readable output where offered.
   Use --dry-run for read-only preflight; --yes explicitly authorizes a write or transaction.
   Skill commands that accept --addr require --chain and --addr together.
-  Keep personal and treasury private keys out of persisted CLI config.
+  Use a dedicated low-value Agent wallet; never use a personal or treasury wallet.
 
 ${c.gray}AgentRegistry identity (advanced):${c.reset}
   finchip init --help

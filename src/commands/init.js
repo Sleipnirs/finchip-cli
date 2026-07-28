@@ -69,7 +69,7 @@ export async function cmdInit(options) {
   ok(`Config saved → ${getConfigPath()}`);
   console.log('');
   console.log('  Next steps:');
-  inf('export FINCHIP_PRIVATE_KEY=0x...   — set your agent wallet');
+  inf('finchip wallet create             — create a dedicated Agent wallet');
   inf('finchip register --perm full        — register fc_key on-chain');
   inf('finchip verify                       — confirm registration');
   inf('finchip doctor                       — full A2A + protocol health check');

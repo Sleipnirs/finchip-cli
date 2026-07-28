@@ -69,7 +69,7 @@ export async function executeCreatorAttestation(options) {
     yes = false,
   } = options;
   if (!account?.address || wallet(sessionWallet) !== wallet(account.address)) {
-    throw new AttestationError('WALLET_MISMATCH', 'Site login wallet and FINCHIP_PRIVATE_KEY wallet must match.', 3);
+    throw new AttestationError('WALLET_MISMATCH', 'Site login wallet and configured Agent wallet must match.', 3);
   }
   const abi = tokenType === 'erc721' ? CHIP_721_ABI : CHIP_ABI;
 
@@ -134,7 +134,7 @@ export async function executeCreatorAttestation(options) {
   if (wallet(genesisCreator) !== wallet(account.address)) {
     throw new AttestationError(
       'WALLET_MISMATCH',
-      'Site login wallet, FINCHIP_PRIVATE_KEY wallet, and on-chain genesisCreator must match.',
+      'Site login wallet, configured Agent wallet, and on-chain genesisCreator must match.',
       3,
     );
   }

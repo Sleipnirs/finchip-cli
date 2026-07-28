@@ -1,6 +1,6 @@
 // finchip library — show all chips the wallet holds across all 5 chains
 // Walks: AgentRegistry.allSlugs() → resolve each → balanceOf(wallet)
-import { loadConfig, getPrivateKey } from '../config.js';
+import { loadConfig, resolveWalletPrivateKey } from '../config.js';
 import { resolveProtocol } from '../discovery.js';
 import { getPublicClient } from '../client.js';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -21,11 +21,12 @@ export async function cmdLibrary(options) {
   let walletAddress = options.wallet || cfg.wallet;
   if (!walletAddress) {
     try {
-      const pk = getPrivateKey(cfg);
+      const pk = resolveWalletPrivateKey(cfg);
       walletAddress = privateKeyToAccount(pk).address;
-    } catch {
-      err('No wallet address found. Pass --wallet 0x... or set FINCHIP_PRIVATE_KEY');
-      process.exit(1);
+    } catch (error) {
+      err(`[${error?.code || 'WALLET_KEY_MISSING'}] ${error?.message || 'No Agent wallet is configured.'}`);
+      process.exitCode = error?.exitCode || 3;
+      return;
     }
   }
 
