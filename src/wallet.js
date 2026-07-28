@@ -88,6 +88,25 @@ export function readWalletPrivateKey(path) {
   }
 }
 
+export function deprecatedWalletEnvironmentVariables(env = process.env) {
+  return ['FINCHIP_PRIVATE_KEY', 'FINCHIP_PRIVATE_KEY_FILE']
+    .filter(variable => typeof env[variable] === 'string' && env[variable].trim());
+}
+
+export function rejectDisabledWalletEnvironment(env = process.env) {
+  const variables = deprecatedWalletEnvironmentVariables(env);
+  if (variables.length) {
+    throw new WalletKeyError(
+      'WALLET_ENV_DISABLED',
+      `${variables.join(', ')} ${variables.length === 1 ? 'is' : 'are'} deprecated and disabled. `
+      + 'Remove the deprecated environment variable before running login or signing commands, '
+      + 'then select a wallet with `finchip wallet use --file <path>`.',
+      3,
+      { variable: variables[0], variables },
+    );
+  }
+}
+
 function legacyWarning(warn) {
   if (legacyWarningEmitted) return;
   legacyWarningEmitted = true;
@@ -102,25 +121,7 @@ export function inspectWalletSource(cfg = {}, {
   required = true,
   warn = message => console.error(`Warning: ${message}`),
 } = {}) {
-  if (env.FINCHIP_PRIVATE_KEY) {
-    const privateKey = normalizeWalletPrivateKey(env.FINCHIP_PRIVATE_KEY);
-    return {
-      source: 'environment',
-      path: null,
-      privateKey,
-      address: privateKeyToAccount(privateKey).address,
-    };
-  }
-  if (env.FINCHIP_PRIVATE_KEY_FILE) {
-    const path = resolveWalletPath(env.FINCHIP_PRIVATE_KEY_FILE);
-    const privateKey = readWalletPrivateKey(path);
-    return {
-      source: 'environment-file',
-      path,
-      privateKey,
-      address: privateKeyToAccount(privateKey).address,
-    };
-  }
+  rejectDisabledWalletEnvironment(env);
   if (cfg.privateKeyFile) {
     const path = resolveWalletPath(cfg.privateKeyFile);
     const privateKey = readWalletPrivateKey(path);

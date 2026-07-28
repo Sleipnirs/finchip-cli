@@ -9,11 +9,14 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { privateKeyToAccount } from 'viem/accounts';
+import { loadOriginCredentials, saveOriginCredentials } from '../src/auth-client.js';
 
 const LEGACY_KEY = `0x${'55'.repeat(32)}`;
+const OTHER_KEY = `0x${'66'.repeat(32)}`;
 
 function runCli(args, home, extraEnv = {}) {
   return new Promise((resolve, reject) => {
@@ -36,6 +39,17 @@ function runCli(args, home, extraEnv = {}) {
     child.on('error', reject);
     child.on('close', code => resolve({ code, stdout, stderr }));
   });
+}
+
+function listen(server) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve(server.address()));
+  });
+}
+
+function close(server) {
+  return new Promise(resolve => server.close(resolve));
 }
 
 test('wallet create, status, and existing-target refusal never reveal or replace the key', async () => {
@@ -95,6 +109,141 @@ test('wallet use selects a user-provided key file without copying it', async () 
   assert.equal(readFileSync(externalPath, 'utf8'), before);
   if (process.platform !== 'win32') {
     assert.equal(statSync(externalPath).mode & 0o777, modeBefore);
+  }
+});
+
+test('wallet status and use report deprecated environment variables without being blocked', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'finchip-wallet-deprecated-env-'));
+  const currentPath = join(home, 'current.key');
+  const nextPath = join(home, 'next.key');
+  writeFileSync(currentPath, `${LEGACY_KEY}\n`);
+  writeFileSync(nextPath, `${OTHER_KEY}\n`);
+  mkdirSync(join(home, '.finchip'), { recursive: true });
+  writeFileSync(join(home, '.finchip', 'config.json'), JSON.stringify({
+    privateKeyFile: currentPath,
+    wallet: privateKeyToAccount(LEGACY_KEY).address,
+  }, null, 2));
+
+  const staleRawKey = `0x${'77'.repeat(32)}`;
+  const status = await runCli(
+    ['wallet', 'status', '--json'],
+    home,
+    { FINCHIP_PRIVATE_KEY: staleRawKey },
+  );
+  assert.equal(status.code, 0, `${status.stderr}\n${status.stdout}`);
+  const statusResult = JSON.parse(status.stdout);
+  assert.equal(statusResult.address, privateKeyToAccount(LEGACY_KEY).address);
+  assert.equal(statusResult.ready, false);
+  assert.deepEqual(statusResult.blockedBy, ['FINCHIP_PRIVATE_KEY']);
+  assert.doesNotMatch(status.stdout + status.stderr, new RegExp(staleRawKey.slice(2), 'i'));
+
+  const selected = await runCli(
+    ['wallet', 'use', '--file', nextPath, '--json'],
+    home,
+    { FINCHIP_PRIVATE_KEY_FILE: 'stale-agent.key' },
+  );
+  assert.equal(selected.code, 0, `${selected.stderr}\n${selected.stdout}`);
+  const selectedResult = JSON.parse(selected.stdout);
+  assert.equal(selectedResult.address, privateKeyToAccount(OTHER_KEY).address);
+  assert.equal(selectedResult.ready, false);
+  assert.deepEqual(selectedResult.blockedBy, ['FINCHIP_PRIVATE_KEY_FILE']);
+  assert.equal(JSON.parse(readFileSync(join(home, '.finchip', 'config.json'), 'utf8')).privateKeyFile, nextPath);
+
+  const blockedLogin = await runCli(
+    ['login', '--json'],
+    home,
+    { FINCHIP_PRIVATE_KEY: staleRawKey },
+  );
+  assert.equal(blockedLogin.code, 3);
+  const blockedResult = JSON.parse(blockedLogin.stdout);
+  assert.equal(blockedResult.code, 'WALLET_ENV_DISABLED');
+  assert.match(blockedResult.error, /deprecated and disabled/);
+  assert.match(blockedResult.error, /Remove the deprecated environment variable/);
+  assert.doesNotMatch(blockedLogin.stdout + blockedLogin.stderr, new RegExp(staleRawKey.slice(2), 'i'));
+});
+
+test('wallet use logs out a persisted session belonging to a different wallet', async () => {
+  const oldAddress = privateKeyToAccount(LEGACY_KEY).address;
+  const newAddress = privateKeyToAccount(OTHER_KEY).address;
+  let activeSessionWallet = oldAddress;
+  let logoutCalls = 0;
+  const server = createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/api/auth/session' && req.method === 'GET') {
+      res.end(JSON.stringify({
+        authenticated: true,
+        identity: { userId: 'user-1', walletAddr: activeSessionWallet },
+        account: { userId: 'user-1' },
+        wallet: { walletAddr: activeSessionWallet },
+        connections: { wallet: { walletAddr: activeSessionWallet }, github: null },
+      }));
+      return;
+    }
+    if (req.url === '/api/auth/logout' && req.method === 'POST') {
+      logoutCalls += 1;
+      res.setHeader('Set-Cookie', [
+        'finchip_account_session=; Max-Age=0; HttpOnly; Path=/',
+        'finchip_wallet_session=; Max-Age=0; HttpOnly; Path=/',
+      ]);
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end(JSON.stringify({ error: 'not found' }));
+  });
+
+  const address = await listen(server);
+  const origin = `http://127.0.0.1:${address.port}`;
+  const home = mkdtempSync(join(tmpdir(), 'finchip-wallet-switch-session-'));
+  const credentialsPath = join(home, 'credentials.json');
+  const newWalletPath = join(home, 'new-wallet.key');
+  writeFileSync(newWalletPath, `${OTHER_KEY}\n`);
+  saveOriginCredentials(origin, {
+    finchip_account_session: { value: 'account-secret', expiresAt: null },
+    finchip_wallet_session: { value: 'wallet-secret', expiresAt: null },
+  }, { path: credentialsPath });
+
+  try {
+    const selected = await runCli(
+      ['wallet', 'use', '--file', newWalletPath, '--json'],
+      home,
+      {
+        FINCHIP_API_URL: origin,
+        FINCHIP_CREDENTIALS_PATH: credentialsPath,
+      },
+    );
+    assert.equal(selected.code, 0, `${selected.stderr}\n${selected.stdout}`);
+    const result = JSON.parse(selected.stdout);
+    assert.equal(result.code, 'WALLET_SELECTED');
+    assert.equal(result.address, newAddress);
+    assert.equal(result.sessionAction, 'logged-out');
+    assert.equal(result.previousSessionWallet, oldAddress);
+    assert.equal(result.remoteRevoked, true);
+    assert.equal(logoutCalls, 1);
+    assert.deepEqual(loadOriginCredentials(origin, { path: credentialsPath }), {});
+
+    activeSessionWallet = newAddress;
+    saveOriginCredentials(origin, {
+      finchip_account_session: { value: 'account-secret', expiresAt: null },
+      finchip_wallet_session: { value: 'wallet-secret', expiresAt: null },
+    }, { path: credentialsPath });
+    const repeated = await runCli(
+      ['wallet', 'use', '--file', newWalletPath, '--json'],
+      home,
+      {
+        FINCHIP_API_URL: origin,
+        FINCHIP_CREDENTIALS_PATH: credentialsPath,
+      },
+    );
+    assert.equal(repeated.code, 0, `${repeated.stderr}\n${repeated.stdout}`);
+    const repeatedResult = JSON.parse(repeated.stdout);
+    assert.equal(repeatedResult.sessionAction, 'preserved');
+    assert.equal(repeatedResult.previousSessionWallet, newAddress);
+    assert.equal(repeatedResult.remoteRevoked, null);
+    assert.equal(logoutCalls, 1);
+    assert.notDeepEqual(loadOriginCredentials(origin, { path: credentialsPath }), {});
+  } finally {
+    await close(server);
   }
 });
 
