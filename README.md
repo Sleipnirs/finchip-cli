@@ -161,27 +161,31 @@ Oracle V2 的普通 ZIP 默认会在 plaintext hash 校验成功后加入 `.finc
 
 非 ZIP、EPUB、signed JAR、没有可验证 plaintext hash 的旧式来源或无法安全重打包的 ZIP 不会注入 provenance。
 
-## 搜索 Skill
+## 浏览与搜索 Skill
 
 ```bash
+finchip skill list
+finchip skill list --category "Security Audit" --sort new
+finchip skill list --category "Dev Environment" --limit 20 --offset 20 --json
 finchip skill search "security audit"
 finchip skill search agent --category "Dev Environment" --sort rating --curated
 finchip skill search wallet --limit 20 --offset 20 --json
 ```
 
-`skill search` 使用 Site 的公开索引搜索已经部署、可交易的 Web3 Skill；它不需要登录、钱包、私钥、FC key 或 RPC。当前不开放 Web2 Skill 和 `--source` 参数。
+`skill list` 浏览 Site 目录中的全部 Web3 Skill，也可以只按分类筛选；`skill search` 在同一目录中执行关键词搜索。两者只返回已经部署、活跃且可交易的 Web3 Skill，不需要登录、钱包、私钥、FC key 或 RPC。当前不开放 Web2 Skill 和 `--source` 参数。
 
-`/api/skills` 是 CDN 公共缓存端点。CLI 刻意不在搜索请求中附带 Cookie、Authorization、Origin 或任何本地身份信息，避免凭据进入公共缓存路径后造成串号或缓存污染。搜索结果保持 Site 返回的排序和分页值，不在本地缓存、重排或二次过滤。
+`/api/skills` 是 CDN 公共缓存端点。CLI 刻意不在目录和搜索请求中附带 Cookie、Authorization、Origin 或任何本地身份信息，避免凭据进入公共缓存路径后造成串号或缓存污染。结果保持 Site 返回的排序和分页值，不在本地缓存、重排或二次过滤。
 
-查询长度为 1–64 个字符。多词查询中，Site 使用前四个 token 生成分词匹配变体，同时仍使用完整查询短语进行匹配；CLI 不截断或改写用户输入。默认按下载量排序并返回 20 条，使用 `--offset` 翻页。
+`skill search` 的查询长度为 1–64 个字符。多词查询中，Site 使用前四个 token 生成分词匹配变体，同时仍使用完整查询短语进行匹配；CLI 不截断或改写用户输入。两个命令都默认按下载量排序并返回 20 条，使用 `--offset` 翻页。
 
-`finchip market search` 是早期保留的链上 registry 列表别名，不是全文搜索；需要按标题、简介、作者、slug、分类或标签搜索时应使用 `finchip skill search`。
+`finchip market search` 是早期保留的链上 registry 列表别名，不是 Site 目录浏览或全文搜索；浏览目录应使用 `finchip skill list`，按标题、简介、作者、slug、分类或标签搜索时应使用 `finchip skill search`。
 
 ## 查看、购买与下载 Skill
 
 消费者的完整只读到持有流程是：
 
 ```bash
+finchip skill list --category "Security Audit"
 finchip skill search "security audit"
 finchip skill show audit-pro-finchip
 finchip acquire --slug audit-pro-finchip --dry-run
@@ -414,6 +418,7 @@ CLI 会先尝试注销该 session，并始终清除本地旧 Cookie。相同钱�
 | `finchip init/register/verify` | fc_key 与 AgentRegistry 权限 |
 | `finchip skill publish` | 唯一完整加密发布入口 |
 | `finchip download` | 授权下载并解密；不安装、不执行 |
+| `finchip skill list` | 浏览或按分类筛选 Site 的 Web3 Skill 目录 |
 | `finchip skill search` | 搜索 Site 索引中的 Web3 Skill |
 | `finchip skill show` | 匿名公开 Skill 详情 |
 | `finchip skill review list/submit/delete` | 读取、提交或删除自己的评价 |

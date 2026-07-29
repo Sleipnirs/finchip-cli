@@ -52,6 +52,7 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   assert.equal(skillHelp.code, 0, skillHelp.stderr);
   assert.match(skillHelp.stdout, /Discover, review, publish, and manage FinChip Skills/);
   assert.match(skillHelp.stdout, /publish \[options\] \[path\]/);
+  assert.match(skillHelp.stdout, /list \[options\]/);
   assert.match(skillHelp.stdout, /show \[options\] <slug>/);
   assert.doesNotMatch(skillHelp.stdout, /^\s+get \[options\] <slug>/m);
   assert.match(skillHelp.stdout, /manage/);

@@ -18,12 +18,14 @@ function formatSafety(safety) {
   return statuses.length ? statuses.join(' · ') : 'not reviewed';
 }
 
-function renderSearchResults(result) {
-  hd(`FinChip Skill Search — ${result.query}`);
+function renderCatalogResults(result, mode) {
+  hd(mode === 'search' ? `FinChip Skill Search — ${result.query}` : 'FinChip Skill Catalog');
   sep();
 
   if (!result.skills.length) {
-    inf('No Web3 Skills matched this query.');
+    inf(mode === 'search'
+      ? 'No Web3 Skills matched this query.'
+      : 'No Web3 Skills matched these filters.');
   } else {
     for (const skill of result.skills) {
       ok(`${skill.title || '(untitled)'} (${skill.slug || 'unknown slug'})`);
@@ -60,11 +62,29 @@ export async function cmdSkillSearch(query, options = {}, dependencies = {}) {
       code: 'SKILL_SEARCH_RESULTS',
       ...search,
     };
-    emitResult(options, result, () => renderSearchResults(result));
+    emitResult(options, result, () => renderCatalogResults(result, 'search'));
   } catch (error) {
     emitFailure(options, error, {
       code: 'SEARCH_FAILED',
       message: 'FinChip Skill search failed.',
+    });
+  }
+}
+
+export async function cmdSkillList(options = {}, dependencies = {}) {
+  try {
+    const client = dependencies.client || new SkillSearchClient();
+    const listing = await client.list(options);
+    const result = {
+      ok: true,
+      code: 'SKILL_LIST_RESULTS',
+      ...listing,
+    };
+    emitResult(options, result, () => renderCatalogResults(result, 'list'));
+  } catch (error) {
+    emitFailure(options, error, {
+      code: 'LIST_FAILED',
+      message: 'FinChip Skill catalog listing failed.',
     });
   }
 }

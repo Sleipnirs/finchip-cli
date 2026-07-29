@@ -15,15 +15,15 @@ export class SkillSearchError extends CliError {
   }
 }
 
-function integerOption(value, fallback, name, min, max) {
+function integerOption(value, fallback, name, min, max, invalidCode) {
   if (value == null) return fallback;
   const text = String(value);
   if (!/^\d+$/.test(text)) {
-    throw new SkillSearchError('SEARCH_INVALID', `${name} must be an integer from ${min} to ${max}.`, 3);
+    throw new SkillSearchError(invalidCode, `${name} must be an integer from ${min} to ${max}.`, 3);
   }
   const parsed = Number(text);
   if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
-    throw new SkillSearchError('SEARCH_INVALID', `${name} must be an integer from ${min} to ${max}.`, 3);
+    throw new SkillSearchError(invalidCode, `${name} must be an integer from ${min} to ${max}.`, 3);
   }
   return parsed;
 }
@@ -119,20 +119,40 @@ export class SkillSearchClient {
       );
     }
 
+    return this.requestCatalog(query, options, {
+      invalidCode: 'SEARCH_INVALID',
+      rateLimitedCode: 'SEARCH_RATE_LIMITED',
+      unavailableCode: 'SEARCH_SERVICE_UNAVAILABLE',
+      failedCode: 'SEARCH_FAILED',
+      operationLabel: 'Skill search',
+    });
+  }
+
+  async list(options = {}) {
+    return this.requestCatalog(null, options, {
+      invalidCode: 'LIST_INVALID',
+      rateLimitedCode: 'LIST_RATE_LIMITED',
+      unavailableCode: 'LIST_SERVICE_UNAVAILABLE',
+      failedCode: 'LIST_FAILED',
+      operationLabel: 'Skill catalog',
+    });
+  }
+
+  async requestCatalog(query, options, errors) {
     const sort = options.sort == null ? 'downloads' : String(options.sort);
     if (!SORTS.has(sort)) {
-      throw new SkillSearchError('SEARCH_INVALID', 'Sort must be downloads, stars, rating, or new.', 3);
+      throw new SkillSearchError(errors.invalidCode, 'Sort must be downloads, stars, rating, or new.', 3);
     }
-    const limit = integerOption(options.limit, DEFAULT_LIMIT, 'limit', 1, MAX_LIMIT);
-    const offset = integerOption(options.offset, 0, 'offset', 0, MAX_OFFSET);
+    const limit = integerOption(options.limit, DEFAULT_LIMIT, 'limit', 1, MAX_LIMIT, errors.invalidCode);
+    const offset = integerOption(options.offset, 0, 'offset', 0, MAX_OFFSET, errors.invalidCode);
     const category = options.category == null ? null : String(options.category);
     if (category != null && !category.trim()) {
-      throw new SkillSearchError('SEARCH_INVALID', 'category cannot be empty.', 3);
+      throw new SkillSearchError(errors.invalidCode, 'category cannot be empty.', 3);
     }
     const curated = Boolean(options.curated);
 
     const url = new URL('/api/skills', `${this.origin}/`);
-    url.searchParams.set('search', query);
+    if (query != null) url.searchParams.set('search', query);
     url.searchParams.set('source', 'web3');
     url.searchParams.set('sort', sort);
     url.searchParams.set('limit', String(limit));
@@ -157,10 +177,10 @@ export class SkillSearchClient {
       text = await response.text();
     } catch (error) {
       throw new SkillSearchError(
-        'SEARCH_SERVICE_UNAVAILABLE',
+        errors.unavailableCode,
         error?.name === 'AbortError'
-          ? 'FinChip Skill search timed out.'
-          : 'Unable to reach FinChip Skill search.',
+          ? `FinChip ${errors.operationLabel} timed out.`
+          : `Unable to reach FinChip ${errors.operationLabel}.`,
         5
       );
     } finally {
@@ -177,40 +197,39 @@ export class SkillSearchClient {
 
     const upstreamMessage = typeof payload?.error === 'string' ? payload.error : null;
     if (response.status === 400) {
-      throw new SkillSearchError('SEARCH_INVALID', upstreamMessage || 'FinChip rejected the search parameters.', 3);
+      throw new SkillSearchError(errors.invalidCode, upstreamMessage || 'FinChip rejected the catalog parameters.', 3);
     }
     if (response.status === 429) {
       const retryAfterSeconds = parseRetryAfter(response.headers.get('Retry-After'));
       throw new SkillSearchError(
-        'SEARCH_RATE_LIMITED',
-        upstreamMessage || 'FinChip Skill search is temporarily rate limited.',
+        errors.rateLimitedCode,
+        upstreamMessage || `FinChip ${errors.operationLabel} is temporarily rate limited.`,
         5,
         retryAfterSeconds == null ? {} : { retryAfterSeconds }
       );
     }
     if (response.status >= 500) {
       throw new SkillSearchError(
-        'SEARCH_SERVICE_UNAVAILABLE',
-        'FinChip Skill search is temporarily unavailable.',
+        errors.unavailableCode,
+        `FinChip ${errors.operationLabel} is temporarily unavailable.`,
         5
       );
     }
     if (payloadInvalid) {
-      throw new SkillSearchError('SEARCH_FAILED', 'FinChip Skill search returned an invalid response.', 5);
+      throw new SkillSearchError(errors.failedCode, `FinChip ${errors.operationLabel} returned an invalid response.`, 5);
     }
     if (!response.ok) {
       throw new SkillSearchError(
-        'SEARCH_FAILED',
-        upstreamMessage || `FinChip Skill search failed with status ${response.status}.`,
+        errors.failedCode,
+        upstreamMessage || `FinChip ${errors.operationLabel} failed with status ${response.status}.`,
         5
       );
     }
     if (!validatePayload(payload)) {
-      throw new SkillSearchError('SEARCH_FAILED', 'FinChip Skill search returned an invalid response.', 5);
+      throw new SkillSearchError(errors.failedCode, `FinChip ${errors.operationLabel} returned an invalid response.`, 5);
     }
 
-    return {
-      query,
+    const result = {
       filters: { category, sort, curated, source: 'web3' },
       pagination: {
         total: payload.total,
@@ -219,5 +238,7 @@ export class SkillSearchClient {
       },
       skills: payload.skills.map(mapSkill),
     };
+    if (query != null) result.query = query;
+    return result;
   }
 }
