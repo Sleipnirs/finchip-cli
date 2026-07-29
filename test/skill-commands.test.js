@@ -64,6 +64,8 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   assert.match(publishHelp.stdout, /--dry-run/);
   assert.match(publishHelp.stdout, /--yes/);
   assert.match(publishHelp.stdout, /--encrypt <mode>/);
+  assert.match(publishHelp.stdout, /--skill-version <version>/);
+  assert.doesNotMatch(publishHelp.stdout, /(?:^|\s)--version <version>/m);
   assert.match(publishHelp.stdout, /raw CK.*Site.*Lit\/Chipotle/i);
 
   const legacyHelp = await runCli(['publish', '--help'], {});
@@ -90,6 +92,14 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   assert.equal(JSON.parse(primary.stdout).code, 'PUBLISH_INVALID');
   assert.match(JSON.parse(primary.stdout).error, /category is required/i);
   assert.equal(JSON.parse(primary.stdout).encryptionMode, 'finchip');
+
+  const customVersion = await runCli([
+    'skill', 'publish', ...publishArgs, '--skill-version', '9.9.9',
+  ], env);
+  assert.equal(customVersion.code, 3, `${customVersion.stderr}\n${customVersion.stdout}`);
+  assert.equal(JSON.parse(customVersion.stdout).code, 'PUBLISH_INVALID');
+  assert.match(JSON.parse(customVersion.stdout).error, /category is required/i);
+  assert.notEqual(customVersion.stdout.trim(), '0.4.1');
 });
 
 test('skill manage get and price sync keep using creator manage endpoints with stable JSON', async () => {

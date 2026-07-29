@@ -574,7 +574,7 @@ async function newPublish(pathArg, options, validated) {
     }
     const metadataPin = await uploadMetadata(client, {
       name: options.name.trim(), description: options.description.trim(), category: options.category,
-      license: options.license, version: options.version, deploymentSlug: validated.slug, imageURI,
+      license: options.license, version: options.skillVersion, deploymentSlug: validated.slug, imageURI,
     });
     uploaded.push(metadataPin.uploadId);
 
@@ -590,7 +590,7 @@ async function newPublish(pathArg, options, validated) {
       tx_hash: deployTxHash, chain_id: chain.id,
       name: options.name.trim(), slug: validated.slug, creator_addr: account.address.toLowerCase(), category: options.category,
       tags: String(options.tags || '').split(',').map(tag => tag.trim()).filter(Boolean), license: options.license,
-      description: options.description.trim(), version: options.version, source_url: manifestPin.uri,
+      description: options.description.trim(), version: options.skillVersion, source_url: manifestPin.uri,
       source_filename: primary.relative, encrypt_mode: validated.encryptionMode, market_eligible: false, metadata_uri: metadataPin.uri,
       token_type: 'erc1155', price_wei: validated.priceWei.toString(), royalty_bps: validated.royaltyBps,
       max_supply: validated.maxSupply, fee_model: 0,

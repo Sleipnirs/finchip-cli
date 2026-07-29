@@ -85,7 +85,7 @@ finchip skill publish ./my-skill \
   --yes
 ```
 
-新发布必须显式填写 `--category`，避免未填写的内容被静默归入错误分类。`--license`、`--version`、`--royalty-bps` 和 `--max-supply` 有平台默认值。
+新发布必须显式填写 `--category`，避免未填写的内容被静默归入错误分类。`--license`、`--skill-version`、`--royalty-bps` 和 `--max-supply` 有平台默认值。根命令的 `finchip --version` 只显示 CLI 版本。
 
 CLI 对外统一显示并接受 Site canonical slug，例如 `my-skill-finchip`。现有链上 Registry 的技术 slug 仍是 `my-skill_finchip`；CLI 会在链上查询时自动转换，历史 `_finchip` 输入也继续兼容。Publish JSON 的 `slug` 是 Site canonical slug，`onchainSlug` 用于链上诊断和恢复，不需要用户日常记忆。
 

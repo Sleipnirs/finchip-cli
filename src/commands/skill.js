@@ -41,7 +41,7 @@ function configurePublish(command) {
     .option('--category <category>', 'Skill category (required for a new publish)')
     .option('--encrypt <mode>', 'Encryption: finchip (default) | lit | oracle-v2. Lit sends the raw CK to the Site and Lit/Chipotle')
     .option('--license <license>', 'License name', 'MIT')
-    .option('--version <version>', 'Skill version', '1.0.0')
+    .option('--skill-version <version>', 'Skill package version', '1.0.0')
     .option('--cover <pathOrUri>', 'Cover image file or ipfs:// URI')
     .option('--tags <tags>', 'Comma-separated tags')
     .option('--royalty-bps <bps>', 'Royalty basis points', '500')
