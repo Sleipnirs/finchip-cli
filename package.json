@@ -1,6 +1,6 @@
 {
   "name": "finchip-cli",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "FinChip Protocol CLI — A2A-native client for acquiring, launching, and trading on-chain AI skill tokens across 5 EVM chains",
   "type": "module",
   "bin": {

@@ -42,9 +42,13 @@ finchip wallet use --file ~/.finchip/wallets/agent.key
 finchip wallet create --file ~/.finchip/wallets/agent-2.key
 ```
 
-`wallet use` 只验证并记录用户提供文件的绝对路径，不复制文件，也不修改该文件或父目录的权限。私钥文件接受带或不带 `0x` 的 64 位十六进制内容。CLI 只把地址、签名和交易发送给 Site，不发送私钥。
+`wallet use` 会验证并记录用户提供文件的绝对路径，不复制文件，也不修改该文件或父目录的权限；若当前登录属于另一钱包，还会自动注销旧 session。私钥文件接受带或不带 `0x` 的 64 位十六进制内容。CLI 只把地址、签名和交易发送给 Site，不发送私钥。
 
-钱包解析优先级为 `FINCHIP_PRIVATE_KEY`、`FINCHIP_PRIVATE_KEY_FILE`、config 中经 `wallet use` 验证的 key-file 路径、最后是 legacy `config.privateKey`。前两个变量仅用于临时 Agent/CI runtime；主路径是 key file。历史明文配置可运行：
+钱包只使用 config 中经 `wallet use` 验证的 key-file 路径；历史
+`config.privateKey` 仅保留迁移兼容。`FINCHIP_PRIVATE_KEY` 和
+`FINCHIP_PRIVATE_KEY_FILE` 已弃用且不再作为私钥来源。登录或签名命令发现任意
+非空旧变量时会返回 `WALLET_ENV_DISABLED`，明确要求从当前环境清除，避免临时
+覆盖造成签名钱包与登录账号分裂。历史明文配置可运行：
 
 ```bash
 finchip wallet migrate
@@ -157,27 +161,31 @@ Oracle V2 的普通 ZIP 默认会在 plaintext hash 校验成功后加入 `.finc
 
 非 ZIP、EPUB、signed JAR、没有可验证 plaintext hash 的旧式来源或无法安全重打包的 ZIP 不会注入 provenance。
 
-## 搜索 Skill
+## 浏览与搜索 Skill
 
 ```bash
+finchip skill list
+finchip skill list --category "Security Audit" --sort new
+finchip skill list --category "Dev Environment" --limit 20 --offset 20 --json
 finchip skill search "security audit"
 finchip skill search agent --category "Dev Environment" --sort rating --curated
 finchip skill search wallet --limit 20 --offset 20 --json
 ```
 
-`skill search` 使用 Site 的公开索引搜索已经部署、可交易的 Web3 Skill；它不需要登录、钱包、私钥、FC key 或 RPC。当前不开放 Web2 Skill 和 `--source` 参数。
+`skill list` 浏览 Site 目录中的全部 Web3 Skill，也可以只按分类筛选；`skill search` 在同一目录中执行关键词搜索。两者只返回已经部署、活跃且可交易的 Web3 Skill，不需要登录、钱包、私钥、FC key 或 RPC。当前不开放 Web2 Skill 和 `--source` 参数。
 
-`/api/skills` 是 CDN 公共缓存端点。CLI 刻意不在搜索请求中附带 Cookie、Authorization、Origin 或任何本地身份信息，避免凭据进入公共缓存路径后造成串号或缓存污染。搜索结果保持 Site 返回的排序和分页值，不在本地缓存、重排或二次过滤。
+`/api/skills` 是 CDN 公共缓存端点。CLI 刻意不在目录和搜索请求中附带 Cookie、Authorization、Origin 或任何本地身份信息，避免凭据进入公共缓存路径后造成串号或缓存污染。结果保持 Site 返回的排序和分页值，不在本地缓存、重排或二次过滤。
 
-查询长度为 1–64 个字符。多词查询中，Site 使用前四个 token 生成分词匹配变体，同时仍使用完整查询短语进行匹配；CLI 不截断或改写用户输入。默认按下载量排序并返回 20 条，使用 `--offset` 翻页。
+`skill search` 的查询长度为 1–64 个字符。多词查询中，Site 使用前四个 token 生成分词匹配变体，同时仍使用完整查询短语进行匹配；CLI 不截断或改写用户输入。两个命令都默认按下载量排序并返回 20 条，使用 `--offset` 翻页。
 
-`finchip market search` 是早期保留的链上 registry 列表别名，不是全文搜索；需要按标题、简介、作者、slug、分类或标签搜索时应使用 `finchip skill search`。
+`finchip market search` 是早期保留的链上 registry 列表别名，不是 Site 目录浏览或全文搜索；浏览目录应使用 `finchip skill list`，按标题、简介、作者、slug、分类或标签搜索时应使用 `finchip skill search`。
 
 ## 查看、购买与下载 Skill
 
 消费者的完整只读到持有流程是：
 
 ```bash
+finchip skill list --category "Security Audit"
 finchip skill search "security audit"
 finchip skill show audit-pro-finchip
 finchip acquire --slug audit-pro-finchip --dry-run
@@ -300,9 +308,32 @@ finchip acquire --slug audit-pro-finchip --dry-run
 finchip acquire --slug audit-pro-finchip --chain bsc --addr 0x1111111111111111111111111111111111111111 --yes
 finchip library
 finchip library --chain bsc
+finchip library --chain optimism --json
 ```
 
 Market 会通过 ERC-165 区分 ERC-1155 与 ERC-721。ERC-721 使用 `forkPrice / totalForked / maxForks`，不会按 ERC-1155 getter 读取。
+
+`library` 的范围是 Site 当前活跃且可交易的 Chip 目录，不包含 inactive、orphan
+或尚未进入 Site 的部署。目录请求是匿名公共读取，不携带 Cookie、Authorization、
+Origin、钱包地址或签名。CLI 按链固定一个区块快照，每 100 个合约通过 Multicall
+同时读取 ERC-1155 token 0/1 余额；只有两个 ERC-1155 调用都失败的地址才回退
+ERC-721 `balanceOf(wallet)`，不会为几千个 ERC-1155 预先做 ERC-721 类型扫描。
+实际持仓对应的历史目录 slug 如果无法转换成当前公共格式，CLI 会保留原始值并
+返回 `CATALOG_SLUG_UNNORMALIZED` warning；未持有的目录条目不会产生该告警。
+该展示字段不会阻断或降低链上持仓扫描的完整性。目录中的 creator 地址缺失或
+被脱敏时不会为未持有的 Chip 产生噪音；实际持仓会使用链上 `creator()` 补全，
+只有链上读取也失败时才通过 `METADATA_PARTIAL` 披露。
+
+只对确认持有的少量 Chip 再从链上读取权威 `creator()` 与精确
+`licensePrice/forkPrice`。若 Site 目录值滞后，链上值优先并返回
+`CATALOG_STALE` warning。价格陈旧检测是 best-effort：Site 返回的
+`price_wei` 可能已经以 JavaScript number 表示，超过安全整数范围后 CLI 不会拿
+可能失真的值作精确比较，因此部分较大价格变化可能没有该 warning；输出的
+`priceWei` 始终来自链上权威读取，不受此限制。部分 RPC 结果无法确认时，
+`library --json` 仍以退出码 0 返回可信持仓，并使用
+`code: "LIBRARY_PARTIAL"`、`complete: false` 和 `warnings` 披露缺口；Site
+目录不可用或没有任何目标链得到可信扫描时才返回
+`LIBRARY_SERVICE_UNAVAILABLE`。
 
 二级市场：
 
@@ -370,7 +401,11 @@ finchip config unset rpc
 
 钱包使用 `finchip wallet create/use/status/migrate` 管理。`finchip config set privateKey`
 和直接设置 `privateKeyFile` 会被拒绝；后者必须经过 `wallet use` 的格式与地址验证。
-`FINCHIP_PRIVATE_KEY` 与 `FINCHIP_PRIVATE_KEY_FILE` 只保留给临时 Agent/CI runtime。
+`FINCHIP_PRIVATE_KEY` 与 `FINCHIP_PRIVATE_KEY_FILE` 已禁用。切换钱包统一使用
+`finchip wallet use --file <path>`；若现有 Cookie session 属于另一个钱包，
+CLI 会先尝试注销该 session，并始终清除本地旧 Cookie。相同钱包的 session 会保留。
+`wallet status/use/create/migrate` 不会被陈旧变量阻断，也绝不会读取其值；它们会
+返回 `ready: false` 和 `blockedBy` 变量名，提醒先清理环境再执行登录或签名命令。
 
 历史配置中的 `pinataJwt` 不再被发布流程使用，但仍始终作为敏感字段遮罩，避免旧 secret 被 `config get` 输出。
 
@@ -383,6 +418,7 @@ finchip config unset rpc
 | `finchip init/register/verify` | fc_key 与 AgentRegistry 权限 |
 | `finchip skill publish` | 唯一完整加密发布入口 |
 | `finchip download` | 授权下载并解密；不安装、不执行 |
+| `finchip skill list` | 浏览或按分类筛选 Site 的 Web3 Skill 目录 |
 | `finchip skill search` | 搜索 Site 索引中的 Web3 Skill |
 | `finchip skill show` | 匿名公开 Skill 详情 |
 | `finchip skill review list/submit/delete` | 读取、提交或删除自己的评价 |

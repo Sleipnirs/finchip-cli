@@ -10,6 +10,7 @@ import {
   validateManageDocument,
   verifyManagedCollections,
 } from '../manage-config.js';
+import { siteLookupSlug } from '../skill-slug.js';
 import { emitFailure, emitResult, fmtAddr, fmtChain, hd, inf, ok, sep } from '../utils.js';
 
 export function deploymentOptions(options) {
@@ -30,6 +31,7 @@ export function deploymentOptions(options) {
 }
 
 export function managePath(slug, deployment, extraQuery = null) {
+  const lookupSlug = siteLookupSlug(slug);
   const query = new URLSearchParams();
   if (deployment) {
     query.set('addr', deployment.addr);
@@ -39,7 +41,7 @@ export function managePath(slug, deployment, extraQuery = null) {
     for (const [key, value] of Object.entries(extraQuery)) query.set(key, value);
   }
   const suffix = query.size ? `?${query}` : '';
-  return `/api/v2/skills/${encodeURIComponent(slug)}/manage${suffix}`;
+  return `/api/v2/skills/${encodeURIComponent(lookupSlug)}/manage${suffix}`;
 }
 
 export function mapManageHttpError(response, payload, fallback = 'Skill management request failed.') {
@@ -69,15 +71,16 @@ export async function authenticatedManageJson(client, path, options = {}) {
 }
 
 export async function loadManageState(client, slug, deployment) {
-  const first = await authenticatedManageJson(client, managePath(slug, deployment), {
+  const lookupSlug = siteLookupSlug(slug);
+  const first = await authenticatedManageJson(client, managePath(lookupSlug, deployment), {
     cache: 'no-store',
     timeoutMs: 30_000,
   });
   if (!first.response.ok) throw mapManageHttpError(first.response, first.payload);
   const canonicalSlug = typeof first.payload?.canonicalSlug === 'string' && first.payload.canonicalSlug.trim()
-    ? first.payload.canonicalSlug.trim()
-    : slug;
-  if (canonicalSlug === slug && first.payload?.skill) {
+    ? siteLookupSlug(first.payload.canonicalSlug)
+    : lookupSlug;
+  if (canonicalSlug === lookupSlug && first.payload?.skill) {
     return { canonicalSlug, payload: first.payload };
   }
   const canonical = await authenticatedManageJson(client, managePath(canonicalSlug, deployment), {
@@ -111,7 +114,8 @@ function readManageDocument(path) {
 async function resolveRelatedSkillIds(client, canonicalSlug, ownSkillId, slugs) {
   if (!slugs) return [];
   const ids = [];
-  for (const requestedSlug of slugs) {
+  for (const rawSlug of slugs) {
+    const requestedSlug = siteLookupSlug(rawSlug);
     if (requestedSlug === canonicalSlug) {
       throw new ManageError('MANAGE_INVALID', `A Skill cannot relate to itself: ${requestedSlug}.`, 3);
     }
@@ -175,7 +179,13 @@ export async function cmdSkillManageGet(slug, options = {}) {
 
 export async function cmdSkillManageApply(slug, options = {}) {
   try {
-    const document = readManageDocument(options.file);
+    const rawDocument = readManageDocument(options.file);
+    const document = Object.hasOwn(rawDocument, 'relatedSkillSlugs')
+      ? {
+          ...rawDocument,
+          relatedSkillSlugs: rawDocument.relatedSkillSlugs.map(siteLookupSlug),
+        }
+      : rawDocument;
     const deployment = deploymentOptions(options);
     const client = new FinchipAuthClient();
     await client.requireSession();

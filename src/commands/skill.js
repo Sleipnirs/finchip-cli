@@ -5,8 +5,9 @@ import { loadConfig, resolveWalletPrivateKey } from '../config.js';
 import { getPublicClient, getWalletClient } from '../client.js';
 import { resolveChain } from '../chains.js';
 import { CHIP_ABI, CHIP_721_ABI } from '../protocol.js';
+import { siteLookupSlug } from '../skill-slug.js';
 import { cmdPublish } from './publish.js';
-import { cmdSkillSearch } from './search.js';
+import { cmdSkillList, cmdSkillSearch } from './search.js';
 import { cmdSkillShow } from './show.js';
 import {
   cmdSkillReviewDelete,
@@ -56,6 +57,17 @@ export function registerSkillCommands(program) {
   const skill = program.command('skill').description('Discover, review, publish, and manage FinChip Skills');
 
   configurePublish(skill.command('publish [path]'));
+
+  skill
+    .command('list')
+    .description('Browse the public FinChip catalog for Web3 Skills')
+    .option('--category <category>', 'Filter by Skill category')
+    .option('--sort <sort>', 'Sort by downloads, stars, rating, or new', 'downloads')
+    .option('--curated', 'Show only curated Skills')
+    .option('--limit <n>', 'Number of results from 1 to 100', '20')
+    .option('--offset <n>', 'Pagination offset from 0 to 100000', '0')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillList);
 
   skill
     .command('search <query>')
@@ -223,20 +235,24 @@ async function context() {
 }
 
 async function manageGet(slug, options, requireDeployment = false) {
+  const lookupSlug = siteLookupSlug(slug);
   const deployment = deploymentOptions(options, requireDeployment);
   const { client, session } = await context();
   const query = deployment.addr
     ? `?addr=${encodeURIComponent(deployment.addr)}&chainId=${deployment.chain.id}`
     : '';
-  const { response, payload } = await client.authenticatedJson(`/api/v2/skills/${encodeURIComponent(slug)}/manage${query}`);
+  const { response, payload } = await client.authenticatedJson(`/api/v2/skills/${encodeURIComponent(lookupSlug)}/manage${query}`);
   if (!response.ok) {
     const code = response.status === 404 ? 'SKILL_NOT_FOUND' : response.status === 403 ? 'NOT_CREATOR' : payload.code || 'SKILL_FAILED';
     throw new SkillError(code, payload.error || `Skill request failed with ${response.status}.`, response.status >= 500 ? 5 : 3);
   }
-  if (payload.canonicalSlug && payload.canonicalSlug !== slug) {
+  const canonicalSlug = payload.canonicalSlug
+    ? siteLookupSlug(payload.canonicalSlug)
+    : lookupSlug;
+  if (payload.canonicalSlug && canonicalSlug !== lookupSlug) {
     throw new SkillError('SKILL_DEPLOYMENT_REQUIRED', `Use canonical slug ${payload.canonicalSlug} for this deployment.`, 3);
   }
-  return { client, session, deployment, payload };
+  return { client, session, deployment, payload, canonicalSlug };
 }
 
 async function resolveTokenType(publicClient, addr, hint) {
@@ -263,7 +279,8 @@ async function verifyWalletOwnership(session, account, publicClient, addr, token
 }
 
 async function syncPrice(client, slug, deployment, txHash) {
-  const { response, payload } = await client.authenticatedJson(`/api/v2/skills/${encodeURIComponent(slug)}/manage/price/sync`, {
+  const lookupSlug = siteLookupSlug(slug);
+  const { response, payload } = await client.authenticatedJson(`/api/v2/skills/${encodeURIComponent(lookupSlug)}/manage/price/sync`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ addr: deployment.addr, chainId: deployment.chain.id, txHash }),
     timeoutMs: 30_000,
@@ -279,6 +296,7 @@ async function syncPrice(client, slug, deployment, txHash) {
 
 export async function cmdSkillPriceSet(slug, options = {}) {
   try {
+    const lookupSlug = siteLookupSlug(slug);
     const requestedDeployment = deploymentOptions(options, true);
     if (options.dryRun && options.yes) {
       throw new SkillError('PRICE_TX_FAILED', '--dry-run and --yes cannot be used together.', 3);
@@ -304,7 +322,7 @@ export async function cmdSkillPriceSet(slug, options = {}) {
         }
       );
     }
-    const managed = await manageGet(slug, options, true);
+    const managed = await manageGet(lookupSlug, options, true);
     const cfg = loadConfig();
     const privateKey = resolveWalletPrivateKey(cfg);
     const account = privateKeyToAccount(privateKey);
@@ -320,12 +338,12 @@ export async function cmdSkillPriceSet(slug, options = {}) {
     });
     if (options.dryRun) {
       const result = {
-        ok: true, code: 'PRICE_DRY_RUN', slug, chainId: managed.deployment.chain.id,
+        ok: true, code: 'PRICE_DRY_RUN', slug: managed.canonicalSlug, chainId: managed.deployment.chain.id,
         contractAddr: managed.deployment.addr, tokenType, oldPriceWei: currentPrice.toString(),
         newPriceWei: newPrice.toString(), estimatedGas: gas.toString(),
       };
       emitResult(options, result, () => {
-        hd('FinChip CLI — price dry run'); sep(); ok(slug);
+        hd('FinChip CLI — price dry run'); sep(); ok(result.slug);
         inf(`contract: ${fmtAddr(managed.deployment.addr)}`);
         inf(`old:      ${formatEther(currentPrice)}`);
         inf(`new:      ${formatEther(newPrice)}`);
@@ -344,9 +362,9 @@ export async function cmdSkillPriceSet(slug, options = {}) {
     } catch (error) {
       throw new SkillError('PRICE_TX_FAILED', error.shortMessage || error.message || 'Price transaction failed.', 5, txHash ? { txHash } : {});
     }
-    const synced = await syncPrice(managed.client, slug, managed.deployment, txHash);
+    const synced = await syncPrice(managed.client, managed.canonicalSlug, managed.deployment, txHash);
     const result = {
-      ok: true, code: 'PRICE_UPDATED', slug, chainId: managed.deployment.chain.id,
+      ok: true, code: 'PRICE_UPDATED', slug: managed.canonicalSlug, chainId: managed.deployment.chain.id,
       contractAddr: managed.deployment.addr, tokenType: synced.tokenType || tokenType,
       priceWei: String(synced.priceWei ?? newPrice), price: String(synced.chipPrice ?? formatEther(newPrice)), txHash,
     };
@@ -370,9 +388,9 @@ export async function cmdSkillPriceSync(slug, options = {}) {
     if (!/^0x[0-9a-fA-F]{64}$/.test(options.txHash || '')) {
       throw new SkillError('PRICE_SYNC_FAILED', 'A valid --tx-hash is required.', 3);
     }
-    const synced = await syncPrice(managed.client, slug, managed.deployment, options.txHash.toLowerCase());
+    const synced = await syncPrice(managed.client, managed.canonicalSlug, managed.deployment, options.txHash.toLowerCase());
     const result = {
-      ok: true, code: 'PRICE_SYNCED', slug, chainId: managed.deployment.chain.id,
+      ok: true, code: 'PRICE_SYNCED', slug: managed.canonicalSlug, chainId: managed.deployment.chain.id,
       contractAddr: managed.deployment.addr, tokenType: synced.tokenType,
       priceWei: String(synced.priceWei), price: String(synced.chipPrice), txHash: options.txHash.toLowerCase(),
     };

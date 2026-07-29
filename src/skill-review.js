@@ -2,7 +2,7 @@ import { FinchipAuthClient } from './auth-client.js';
 import { getPublicClient } from './client.js';
 import { CHIP_ABI, CHIP_721_ABI, IFACE_ID } from './protocol.js';
 import { SkillDetailClient } from './skill-detail.js';
-import { siteCanonicalSlug } from './skill-slug.js';
+import { siteLookupSlug } from './skill-slug.js';
 import { CliError } from './utils.js';
 
 export class ReviewError extends CliError {
@@ -229,7 +229,7 @@ function deleteInput(slug, options) {
   }
   let canonicalSlug;
   try {
-    canonicalSlug = siteCanonicalSlug(slug);
+    canonicalSlug = siteLookupSlug(slug);
   } catch (error) {
     throw new ReviewError(
       'REVIEW_INVALID',

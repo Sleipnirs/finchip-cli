@@ -16,7 +16,6 @@ import {
 } from '../src/commands/wallet.js';
 
 const ENV_KEY = `0x${'11'.repeat(32)}`;
-const ENV_FILE_KEY = `0x${'22'.repeat(32)}`;
 const CONFIG_FILE_KEY = `0x${'33'.repeat(32)}`;
 const LEGACY_KEY = `0x${'44'.repeat(32)}`;
 
@@ -29,23 +28,15 @@ test('wallet key normalization accepts whitespace and an optional 0x prefix', ()
   );
 });
 
-test('wallet resolution follows env, env file, config file, then legacy config', () => {
+test('wallet resolution uses the selected config file then legacy config', () => {
   const dir = mkdtempSync(join(tmpdir(), 'finchip-wallet-resolution-'));
-  const envPath = join(dir, 'env.key');
   const configPath = join(dir, 'config.key');
-  writeFileSync(envPath, `${ENV_FILE_KEY}\n`);
   writeFileSync(configPath, CONFIG_FILE_KEY.slice(2));
   const cfg = {
     privateKeyFile: configPath,
     privateKey: LEGACY_KEY,
   };
 
-  assert.equal(resolveWalletPrivateKey(cfg, {
-    env: { FINCHIP_PRIVATE_KEY: ENV_KEY, FINCHIP_PRIVATE_KEY_FILE: envPath },
-  }), ENV_KEY);
-  assert.equal(resolveWalletPrivateKey(cfg, {
-    env: { FINCHIP_PRIVATE_KEY_FILE: envPath },
-  }), ENV_FILE_KEY);
   assert.equal(resolveWalletPrivateKey(cfg, { env: {} }), CONFIG_FILE_KEY);
 
   const warnings = [];
@@ -60,13 +51,24 @@ test('wallet resolution follows env, env file, config file, then legacy config',
   assert.equal(warnings.length, 1);
 });
 
-test('higher-priority invalid wallet sources fail closed instead of falling back', () => {
-  assert.throws(
-    () => resolveWalletPrivateKey({ privateKey: LEGACY_KEY }, {
-      env: { FINCHIP_PRIVATE_KEY: 'invalid' },
-    }),
-    error => error instanceof WalletKeyError && error.code === 'WALLET_KEY_INVALID',
-  );
+test('temporary wallet environment variables are disabled and never fall back', () => {
+  for (const [variable, value] of [
+    ['FINCHIP_PRIVATE_KEY', ENV_KEY],
+    ['FINCHIP_PRIVATE_KEY_FILE', 'agent.key'],
+  ]) {
+    assert.throws(
+      () => resolveWalletPrivateKey({ privateKey: LEGACY_KEY }, {
+        env: { [variable]: value },
+      }),
+      error => error instanceof WalletKeyError
+        && error.code === 'WALLET_ENV_DISABLED'
+        && error.details.variable === variable
+        && error.details.variables.length === 1
+        && /deprecated and disabled/.test(error.message)
+        && /Remove the deprecated environment variable/.test(error.message)
+        && !error.message.includes(value),
+    );
+  }
 });
 
 test('missing wallet source has a stable error and optional inspection remains offline', () => {

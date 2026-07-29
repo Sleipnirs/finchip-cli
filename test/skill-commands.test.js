@@ -52,6 +52,7 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   assert.equal(skillHelp.code, 0, skillHelp.stderr);
   assert.match(skillHelp.stdout, /Discover, review, publish, and manage FinChip Skills/);
   assert.match(skillHelp.stdout, /publish \[options\] \[path\]/);
+  assert.match(skillHelp.stdout, /list \[options\]/);
   assert.match(skillHelp.stdout, /show \[options\] <slug>/);
   assert.doesNotMatch(skillHelp.stdout, /^\s+get \[options\] <slug>/m);
   assert.match(skillHelp.stdout, /manage/);
@@ -109,14 +110,14 @@ test('skill manage get and price sync keep using creator manage endpoints with s
         }));
         return;
       }
-      if (req.url === `/api/v2/skills/demo_finchip/manage?addr=${ADDR}&chainId=56`) {
+      if (req.url === `/api/v2/skills/demo-finchip/manage?addr=${ADDR}&chainId=56`) {
         res.end(JSON.stringify({ skill: {
           id: 'skill-1', slug: 'demo_finchip', title: 'Demo', category: 'Code', is_on_chain: true,
           chip_address: ADDR, chain_id: 56, token_type: 'erc1155', price_wei: '10000000000000000',
         } }));
         return;
       }
-      if (req.url === '/api/v2/skills/demo_finchip/manage/price/sync') {
+      if (req.url === '/api/v2/skills/demo-finchip/manage/price/sync') {
         assert.deepEqual(body, { addr: ADDR, chainId: 56, txHash: TX_HASH });
         res.end(JSON.stringify({ priceWei: '20000000000000000', tokenType: 'erc1155', chipPrice: 0.02 }));
         return;

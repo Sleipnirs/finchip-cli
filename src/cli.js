@@ -80,7 +80,7 @@ wallet
 
 wallet
   .command('use')
-  .description('Select an existing private-key file without copying or changing it')
+  .description('Select an existing key file and log out a session for a different wallet')
   .requiredOption('--file <path>', 'Existing private-key file')
   .option('--json', 'Emit machine-readable JSON')
   .action(cmdWalletUse);
@@ -189,9 +189,10 @@ trade
 // ── Operate · library ────────────────────────────────────────────────────────
 program
   .command('library')
-  .description('Show all chips you hold across all supported chains')
+  .description('Show active-catalog Skill holdings with batched on-chain verification')
   .option('--wallet <addr>',   'Wallet address (defaults to one derived from private key)')
   .option('--chain <chainId>', 'Filter to a single chain')
+  .option('--json',            'Emit machine-readable JSON')
   .action(cmdLibrary);
 
 // ── Configure ────────────────────────────────────────────────────────────────

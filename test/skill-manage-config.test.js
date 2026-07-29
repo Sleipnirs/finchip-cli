@@ -154,7 +154,7 @@ test('manage get follows canonical slug and apply sends cookie-only allowlisted 
         res.end(JSON.stringify({ canonicalSlug: 'demo_finchip' }));
         return;
       }
-      if (req.url === `/api/v2/skills/demo_finchip/manage?addr=${ADDR}&chainId=56` && req.method === 'GET') {
+      if (req.url === `/api/v2/skills/demo-finchip/manage?addr=${ADDR}&chainId=56` && req.method === 'GET') {
         res.end(JSON.stringify({
           skill: {
             id: SKILL_ID,
@@ -165,17 +165,17 @@ test('manage get follows canonical slug and apply sends cookie-only allowlisted 
             instruction_overrides: {},
           },
           supportedAgents: applied ? [{ key: 'codex-cli', note: 'tested' }] : [],
-          relatedSkills: applied ? [{ id: RELATED_ID, slug: 'other_finchip' }] : [],
+          relatedSkills: applied ? [{ id: RELATED_ID, slug: 'other-finchip' }] : [],
         }));
         return;
       }
-      if (req.url === '/api/v2/skills/demo_finchip/manage?searchRelated=other_finchip') {
+      if (req.url === '/api/v2/skills/demo-finchip/manage?searchRelated=other-finchip') {
         res.end(JSON.stringify({
-          candidates: [{ id: RELATED_ID, slug: 'other_finchip', title: 'Other' }],
+          candidates: [{ id: RELATED_ID, slug: 'other-finchip', title: 'Other' }],
         }));
         return;
       }
-      if (req.url === '/api/v2/skills/demo_finchip/manage' && req.method === 'PATCH') {
+      if (req.url === '/api/v2/skills/demo-finchip/manage' && req.method === 'PATCH') {
         assert.deepEqual(body, {
           displayOverrides: { summary: '' },
           supportedAgents: [{ key: 'codex-cli', note: 'tested' }],
@@ -213,7 +213,7 @@ test('manage get follows canonical slug and apply sends cookie-only allowlisted 
     assert.equal(get.code, 0, `${get.stderr}\n${get.stdout}`);
     const getResult = JSON.parse(get.stdout);
     assert.equal(getResult.code, 'SKILL_MANAGE_STATE');
-    assert.equal(getResult.slug, 'demo_finchip');
+    assert.equal(getResult.slug, 'demo-finchip');
     assert.equal(Object.hasOwn(getResult.editable.displayOverrides, 'imagePath'), false);
 
     const apply = await runCli([

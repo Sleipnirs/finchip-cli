@@ -28,6 +28,7 @@ import {
 } from '../download-utils.js';
 import { writePrivateBinaryFile } from '../private-files.js';
 import { CHIP_ABI } from '../protocol.js';
+import { siteLookupSlug } from '../skill-slug.js';
 import { emitFailure, emitResult, hd, inf, ok, sep, wrn } from '../utils.js';
 
 function validateOptions(options) {
@@ -43,10 +44,11 @@ function validateOptions(options) {
 }
 
 async function resolveDeployment(client, slug, requested) {
-  if (requested) return { slug, ...requested };
+  const lookupSlug = siteLookupSlug(slug);
+  if (requested) return { slug: lookupSlug, ...requested };
   let detail;
   try {
-    detail = await client.json(`/api/v2/skills/${encodeURIComponent(slug)}`, {
+    detail = await client.json(`/api/v2/skills/${encodeURIComponent(lookupSlug)}`, {
       cache: 'no-store',
       timeoutMs: 30_000,
     });
@@ -67,7 +69,11 @@ async function resolveDeployment(client, slug, requested) {
     throw new DownloadError('SOURCE_NOT_AVAILABLE', 'Skill is not linked to a canonical on-chain deployment.', 3);
   }
   resolveChain(chainId);
-  return { slug: payload.skill?.slug || slug, addr: addr.toLowerCase(), chainId };
+  return {
+    slug: siteLookupSlug(payload.skill?.slug || lookupSlug),
+    addr: addr.toLowerCase(),
+    chainId,
+  };
 }
 
 async function validateActiveSession(client, account) {
