@@ -7,7 +7,7 @@ import { resolveChain } from '../chains.js';
 import { CHIP_ABI, CHIP_721_ABI } from '../protocol.js';
 import { siteLookupSlug } from '../skill-slug.js';
 import { cmdPublish } from './publish.js';
-import { cmdSkillSearch } from './search.js';
+import { cmdSkillList, cmdSkillSearch } from './search.js';
 import { cmdSkillShow } from './show.js';
 import {
   cmdSkillReviewDelete,
@@ -57,6 +57,17 @@ export function registerSkillCommands(program) {
   const skill = program.command('skill').description('Discover, review, publish, and manage FinChip Skills');
 
   configurePublish(skill.command('publish [path]'));
+
+  skill
+    .command('list')
+    .description('Browse the public FinChip catalog for Web3 Skills')
+    .option('--category <category>', 'Filter by Skill category')
+    .option('--sort <sort>', 'Sort by downloads, stars, rating, or new', 'downloads')
+    .option('--curated', 'Show only curated Skills')
+    .option('--limit <n>', 'Number of results from 1 to 100', '20')
+    .option('--offset <n>', 'Pagination offset from 0 to 100000', '0')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(cmdSkillList);
 
   skill
     .command('search <query>')

@@ -103,6 +103,48 @@ test('public skill search preserves the query and sends no credentials to the ca
   assert.equal(result.skills[1].reviewCount, 0);
 });
 
+test('public skill list omits search while preserving category, sorting, and pagination', async () => {
+  const calls = [];
+  const client = new SkillSearchClient({
+    origin: 'https://finchip.ai/path',
+    fetchImpl: async (url, init) => {
+      calls.push({ url: new URL(url), init });
+      return jsonResponse({ skills: SKILLS, total: 27, limit: 10, offset: 20 });
+    },
+  });
+
+  const result = await client.list({
+    category: 'Security Audit',
+    sort: 'new',
+    curated: true,
+    limit: '10',
+    offset: '20',
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url.pathname, '/api/skills');
+  assert.equal(calls[0].url.searchParams.has('search'), false);
+  assert.equal(calls[0].url.searchParams.get('source'), 'web3');
+  assert.equal(calls[0].url.searchParams.get('category'), 'Security Audit');
+  assert.equal(calls[0].url.searchParams.get('sort'), 'new');
+  assert.equal(calls[0].url.searchParams.get('curated'), '1');
+  assert.equal(calls[0].url.searchParams.get('limit'), '10');
+  assert.equal(calls[0].url.searchParams.get('offset'), '20');
+  assert.equal(calls[0].url.searchParams.has('on_chain'), false);
+  assert.equal(calls[0].init.headers.has('Cookie'), false);
+  assert.equal(calls[0].init.headers.has('Authorization'), false);
+  assert.equal(calls[0].init.headers.has('Origin'), false);
+  assert.equal('query' in result, false);
+  assert.deepEqual(result.filters, {
+    category: 'Security Audit',
+    sort: 'new',
+    curated: true,
+    source: 'web3',
+  });
+  assert.deepEqual(result.pagination, { total: 27, limit: 10, offset: 20 });
+  assert.equal(result.skills.length, 2);
+});
+
 test('skill search validates its public parameter contract before fetching', async () => {
   let calls = 0;
   const client = new SkillSearchClient({
@@ -126,6 +168,31 @@ test('skill search validates its public parameter contract before fetching', asy
     await assert.rejects(
       () => client.search(query, options),
       error => error instanceof SkillSearchError && error.code === 'SEARCH_INVALID' && error.exitCode === 3
+    );
+  }
+  assert.equal(calls, 0);
+});
+
+test('skill list validates filters with list-specific errors before fetching', async () => {
+  let calls = 0;
+  const client = new SkillSearchClient({
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse({ skills: [], total: 0, limit: 20, offset: 0 });
+    },
+  });
+
+  for (const options of [
+    { sort: 'popular' },
+    { limit: '0' },
+    { limit: '101' },
+    { offset: '-1' },
+    { offset: '100001' },
+    { category: '   ' },
+  ]) {
+    await assert.rejects(
+      () => client.list(options),
+      error => error instanceof SkillSearchError && error.code === 'LIST_INVALID' && error.exitCode === 3
     );
   }
   assert.equal(calls, 0);

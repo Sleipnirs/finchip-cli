@@ -111,6 +111,81 @@ test('skill search CLI returns stable JSON and never sends persisted credentials
   }
 });
 
+test('skill list CLI browses by category without a query or persisted credentials', async () => {
+  let observed = null;
+  const server = createServer((req, res) => {
+    observed = {
+      url: new URL(req.url, 'http://localhost'),
+      cookie: req.headers.cookie,
+      authorization: req.headers.authorization,
+      origin: req.headers.origin,
+    };
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      skills: [{
+        id: 'skill-1',
+        slug: 'audit_finchip',
+        title: 'Audit',
+        category: 'Security Audit',
+        source: 'web3',
+        chain_id: 56,
+        chip_address: '0x1111111111111111111111111111111111111111',
+        chip_price: 0,
+      }],
+      total: 1,
+      limit: 5,
+      offset: 10,
+    }));
+  });
+  const address = await listen(server);
+  const apiOrigin = `http://127.0.0.1:${address.port}`;
+  const root = mkdtempSync(join(tmpdir(), 'finchip-skill-list-'));
+  const credentialsPath = join(root, 'credentials.json');
+  saveOriginCredentials(apiOrigin, {
+    finchip_account_session: { value: 'account-secret', expiresAt: null },
+    finchip_wallet_session: { value: 'wallet-secret', expiresAt: null },
+  }, { path: credentialsPath });
+
+  try {
+    const result = await runCli([
+      'skill', 'list',
+      '--category', 'Security Audit',
+      '--sort', 'new',
+      '--limit', '5',
+      '--offset', '10',
+      '--json',
+    ], {
+      FINCHIP_API_URL: apiOrigin,
+      FINCHIP_CREDENTIALS_PATH: credentialsPath,
+    });
+
+    assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.code, 'SKILL_LIST_RESULTS');
+    assert.equal('query' in payload, false);
+    assert.deepEqual(payload.filters, {
+      category: 'Security Audit',
+      sort: 'new',
+      curated: false,
+      source: 'web3',
+    });
+    assert.deepEqual(payload.pagination, { total: 1, limit: 5, offset: 10 });
+    assert.equal(payload.skills[0].slug, 'audit_finchip');
+    assert.doesNotMatch(result.stdout, /account-secret|wallet-secret/);
+
+    assert.equal(observed.url.pathname, '/api/skills');
+    assert.equal(observed.url.searchParams.has('search'), false);
+    assert.equal(observed.url.searchParams.get('category'), 'Security Audit');
+    assert.equal(observed.url.searchParams.get('source'), 'web3');
+    assert.equal(observed.url.searchParams.has('on_chain'), false);
+    assert.equal(observed.cookie, undefined);
+    assert.equal(observed.authorization, undefined);
+    assert.equal(observed.origin, undefined);
+  } finally {
+    await close(server);
+  }
+});
+
 test('skill search text reports an unknown total when Site returns zero with results', async () => {
   const server = createServer((_req, res) => {
     res.setHeader('Content-Type', 'application/json');
@@ -163,7 +238,15 @@ test('skill search text reports an unknown total when Site returns zero with res
 test('skill search help is present while market search remains the legacy list alias', async () => {
   const skillHelp = await runCli(['skill', '--help']);
   assert.equal(skillHelp.code, 0, skillHelp.stderr);
+  assert.match(skillHelp.stdout, /list \[options\]/);
   assert.match(skillHelp.stdout, /search \[options\] <query>/);
+
+  const listHelp = await runCli(['skill', 'list', '--help']);
+  assert.equal(listHelp.code, 0, listHelp.stderr);
+  assert.match(listHelp.stdout, /--category <category>/);
+  assert.match(listHelp.stdout, /--sort <sort>/);
+  assert.match(listHelp.stdout, /--curated/);
+  assert.doesNotMatch(listHelp.stdout, /--source|--on-chain|--chain/);
 
   const searchHelp = await runCli(['skill', 'search', '--help']);
   assert.equal(searchHelp.code, 0, searchHelp.stderr);
