@@ -79,10 +79,18 @@ function validateOptions(pathArg, options) {
   if (!pathArg) throw new PublishError('SOURCE_UNSAFE', 'A source file or Git directory is required.', 3, 'validation');
   const slug = canonicalSlug(options.slug);
   if (!options.name?.trim()) throw new PublishError('PUBLISH_INVALID', '--name is required.', 3, 'validation');
+  if (!options.summary?.trim()) throw new PublishError('PUBLISH_INVALID', '--summary is required.', 3, 'validation');
   if (!options.description?.trim()) throw new PublishError('PUBLISH_INVALID', '--description is required.', 3, 'validation');
-  const fieldLimits = { name: 120, description: 5_000, category: 100, license: 100, version: 50 };
-  for (const [field, limit] of Object.entries(fieldLimits)) {
-    const value = String(options[field] || '').trim();
+  const fieldLimits = [
+    ['name', options.name, 120],
+    ['summary', options.summary, 280],
+    ['description', options.description, 5_000],
+    ['category', options.category, 100],
+    ['license', options.license, 100],
+    ['skill-version', options.skillVersion, 50],
+  ];
+  for (const [field, rawValue, limit] of fieldLimits) {
+    const value = String(rawValue || '').trim();
     if (!value || value.length > limit) {
       throw new PublishError('PUBLISH_INVALID', `${field} is required and must be ${limit} characters or fewer.`, 3, 'validation');
     }
@@ -536,6 +544,7 @@ async function newPublish(pathArg, options, validated) {
       ok: true, code: 'PUBLISH_DRY_RUN', stage: 'validated',
       slug: publicSlug, onchainSlug: validated.slug, chainId: chain.id,
       encryptionMode: validated.encryptionMode,
+      summary: options.summary.trim(),
       walletAddr: account.address.toLowerCase(), primary: primary.relative, fileCount: source.files.length,
       sourceFiles: source.files.map(file => file.relative),
       excludedSensitiveFiles: source.excludedSensitivePaths,
@@ -574,7 +583,7 @@ async function newPublish(pathArg, options, validated) {
     }
     const metadataPin = await uploadMetadata(client, {
       name: options.name.trim(), description: options.description.trim(), category: options.category,
-      license: options.license, version: options.version, deploymentSlug: validated.slug, imageURI,
+      license: options.license, version: options.skillVersion, deploymentSlug: validated.slug, imageURI,
     });
     uploaded.push(metadataPin.uploadId);
 
@@ -590,7 +599,7 @@ async function newPublish(pathArg, options, validated) {
       tx_hash: deployTxHash, chain_id: chain.id,
       name: options.name.trim(), slug: validated.slug, creator_addr: account.address.toLowerCase(), category: options.category,
       tags: String(options.tags || '').split(',').map(tag => tag.trim()).filter(Boolean), license: options.license,
-      description: options.description.trim(), version: options.version, source_url: manifestPin.uri,
+      summary: options.summary.trim(), description: options.description.trim(), version: options.skillVersion, source_url: manifestPin.uri,
       source_filename: primary.relative, encrypt_mode: validated.encryptionMode, market_eligible: false, metadata_uri: metadataPin.uri,
       token_type: 'erc1155', price_wei: validated.priceWei.toString(), royalty_bps: validated.royaltyBps,
       max_supply: validated.maxSupply, fee_model: 0,
@@ -634,7 +643,7 @@ export async function cmdPublish(pathArg, options = {}) {
     const result = options.resume
       ? await resumePublish(validated.slug, options)
       : await newPublish(pathArg, {
-          license: 'MIT', version: '1.0.0', royaltyBps: '500', maxSupply: '0', ...options,
+          license: 'MIT', skillVersion: '1.0.0', royaltyBps: '500', maxSupply: '0', ...options,
         }, validated);
     emitResult(options, result, () => {
       hd(options.dryRun ? 'FinChip CLI — publish dry run' : 'FinChip CLI — publish');
