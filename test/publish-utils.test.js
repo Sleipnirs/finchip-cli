@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createDecipheriv } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { unzipSync } from 'fflate';
 import {
   buildContentManifest,
   buildSourceBundle,
@@ -87,6 +88,8 @@ test('Git source collection follows ignore rules and hard exclusions', () => {
   writeFileSync(join(root, '.netrc'), 'password secret');
   writeFileSync(join(root, 'terraform.tfstate'), '{"secret":"value"}');
   writeFileSync(join(root, 'prod.tfvars'), 'token="secret"');
+  mkdirSync(join(root, 'build'));
+  writeFileSync(join(root, 'build', 'intentional.js'), 'export default 2');
   mkdirSync(join(root, 'node_modules'));
   writeFileSync(join(root, 'node_modules', 'bad.js'), 'bad');
   mkdirSync(join(root, '.aws'));
@@ -97,7 +100,7 @@ test('Git source collection follows ignore rules and hard exclusions', () => {
   writeFileSync(join(root, '.kube', 'config'), 'token: secret');
 
   const source = collectPublishSource(root);
-  assert.deepEqual(source.files.map(file => file.relative).sort(), ['.gitignore', 'SKILL.md', 'index.js']);
+  assert.deepEqual(source.files.map(file => file.relative).sort(), ['.gitignore', 'SKILL.md', 'build/intentional.js', 'index.js']);
   for (const excluded of [
     '.env',
     '.npmrc',
@@ -114,6 +117,48 @@ test('Git source collection follows ignore rules and hard exclusions', () => {
   }
   assert.equal(source.files[source.primaryIndex].relative, 'SKILL.md');
   assert.ok(buildSourceBundle(source).length > 0);
+});
+
+test('plain directory source collection is deterministic and excludes unsafe or generated entries', () => {
+  const root = mkdtempSync(join(tmpdir(), 'finchip-publish-directory-'));
+  const external = join(root, '..', `${root.split(/[\\/]/).at(-1)}-external.txt`);
+  writeFileSync(external, 'must not be followed');
+  writeFileSync(join(root, 'SKILL.md'), '# test');
+  mkdirSync(join(root, 'src'));
+  writeFileSync(join(root, 'src', 'index.js'), 'export default 1');
+  writeFileSync(join(root, '.env'), 'SECRET=value');
+  mkdirSync(join(root, 'node_modules'));
+  writeFileSync(join(root, 'node_modules', 'dependency.js'), 'ignored');
+  mkdirSync(join(root, 'build'));
+  writeFileSync(join(root, 'build', 'bundle.js'), 'ignored');
+
+  let symlinkCreated = false;
+  try {
+    symlinkSync(external, join(root, 'linked-secret.txt'), 'file');
+    symlinkCreated = true;
+  } catch {
+    // Windows without Developer Mode may reject symlink creation. Other CI
+    // platforms still exercise the observable no-follow behavior.
+  }
+
+  const source = collectPublishSource(root);
+  assert.equal(source.collectionMode, 'directory');
+  assert.deepEqual(source.files.map(file => file.relative), ['SKILL.md', 'src/index.js']);
+  assert.deepEqual(source.excludedFiles.filter(entry => entry.reason === 'sensitive'), [
+    { path: '.env', reason: 'sensitive' },
+  ]);
+  assert.deepEqual(source.excludedFiles.filter(entry => entry.reason === 'generated'), [
+    { path: 'build', reason: 'generated' },
+    { path: 'node_modules', reason: 'generated' },
+  ]);
+  if (symlinkCreated) {
+    assert.ok(source.excludedFiles.some(entry =>
+      entry.path === 'linked-secret.txt' && entry.reason === 'symlink'
+    ));
+  }
+  assert.equal(source.files[source.primaryIndex].relative, 'SKILL.md');
+  const bundle = buildSourceBundle(source);
+  assert.deepEqual(Object.keys(unzipSync(new Uint8Array(bundle))).sort(), ['SKILL.md', 'src/index.js']);
 });
 
 test('artifact encryption uses the site-compatible IV plus AES-GCM ciphertext format', async () => {

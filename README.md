@@ -122,7 +122,7 @@ finchip skill publish ./my-skill \
 finchip skill publish --resume my-skill --yes --json
 ```
 
-目录发布要求目标是 Git 仓库，并遵守 `.gitignore`。CLI 还会强制排除常见凭据、私钥、云服务配置、容器/Kubernetes 认证文件和 Terraform state/variables。Dry run JSON 会返回 `sourceFiles`、`excludedSensitiveFiles` 和实际 `encryptionMode`。
+目录发布不再要求 Git。若目标位于 Git 仓库中，CLI 使用 Git 枚举文件并遵守 `.gitignore`；普通目录则使用安全的本地递归收集。两种模式都不会跟随符号链接，并强制排除常见凭据、私钥、云服务配置、容器/Kubernetes 认证文件；普通目录还会跳过 `node_modules`、构建输出和常见缓存目录。Dry run JSON 会返回 `sourceFiles`、带原因的 `excludedFiles`、兼容字段 `excludedSensitiveFiles`、`sourceCollectionMode` 和实际 `encryptionMode`。
 
 发布恢复状态保存在 `~/.finchip/publish-state.json`，权限仅限当前用户。状态会在广播前保存待提交的完整 encryption tuple；因此 Lit 在 `key_prepared` 或 `key_submitted` 后恢复时会复用 ciphertext，不再次发送 CK。旧状态没有模式时按 `finchip` 解释。
 

@@ -450,6 +450,8 @@ async function finishPublish(state, context, contentKey) {
       setLitTxHash: state.setLitTxHash || null, skillId: state.skillId || null,
       encryptionMode: state.mode,
       sourceFiles: state.sourceFiles || [],
+      sourceCollectionMode: state.sourceCollectionMode || null,
+      excludedFiles: state.excludedFiles || [],
       excludedSensitiveFiles: state.excludedSensitiveFiles || [],
     };
   } catch (error) {
@@ -498,12 +500,13 @@ async function newPublish(pathArg, options, validated) {
   } catch (error) {
     throw new PublishError('SOURCE_UNSAFE', error instanceof Error ? error.message : 'Source validation failed.', 3, 'validation');
   }
-  if (source.excludedSensitivePaths.length && !options.json) {
-    const preview = source.excludedSensitivePaths.slice(0, 5).join(', ');
-    const remainder = source.excludedSensitivePaths.length > 5
-      ? `, +${source.excludedSensitivePaths.length - 5} more`
+  if (source.excludedFiles.length && !options.json) {
+    const preview = source.excludedFiles.slice(0, 5)
+      .map(file => `${file.path} (${file.reason})`).join(', ');
+    const remainder = source.excludedFiles.length > 5
+      ? `, +${source.excludedFiles.length - 5} more`
       : '';
-    wrn(`Excluded sensitive files from the publish bundle: ${preview}${remainder}`);
+    wrn(`Excluded files or directories from the publish bundle: ${preview}${remainder}`);
   }
   const primary = source.files[source.primaryIndex];
   const primaryBytes = readFileSync(primary.absolute);
@@ -547,6 +550,8 @@ async function newPublish(pathArg, options, validated) {
       summary: options.summary.trim(),
       walletAddr: account.address.toLowerCase(), primary: primary.relative, fileCount: source.files.length,
       sourceFiles: source.files.map(file => file.relative),
+      sourceCollectionMode: source.collectionMode,
+      excludedFiles: source.excludedFiles,
       excludedSensitiveFiles: source.excludedSensitivePaths,
       primaryEncryptedBytes: encryptedPrimary.length, bundleEncryptedBytes: encryptedBundle?.length || 0,
       estimatedGas: gasEstimate.toString(), balance: formatEther(balance),
@@ -616,6 +621,8 @@ async function newPublish(pathArg, options, validated) {
         contentKey, privateKey, recoveryContext(client.origin, validated.slug, account.address),
       ),
       sourceFiles: source.files.map(file => file.relative),
+      sourceCollectionMode: source.collectionMode,
+      excludedFiles: source.excludedFiles,
       excludedSensitiveFiles: source.excludedSensitivePaths,
     };
     savePublishState(client.origin, validated.slug, state);
