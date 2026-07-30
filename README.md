@@ -78,14 +78,18 @@ CLI 把“准备操作”和“授权花钱/广播”分开。会签署付款或
 finchip skill publish ./my-skill \
   --slug my-skill \
   --name "My Skill" \
-  --description "Agent-ready skill description" \
+  --summary "Explains EVM transactions and flags the main risks; it does not sign or broadcast transactions." \
+  --description "Problem: Raw EVM transaction data is difficult to assess. Outcome: A structured explanation and risk notes. Can: Decode calls and explain likely effects. Not for: Signing, broadcasting, or guaranteeing safety. Requires: Transaction data and chain context. Produces: A human-readable report. Limits: Results depend on supplied data and supported ABIs. Side effects: None. Good matches: Users reviewing a transaction before signing. Not a match: Users asking the Skill to execute the transaction." \
   --category "Dev Environment" \
+  --skill-version "1.0.0" \
   --price 0.01 \
   --chain bsc \
   --yes
 ```
 
-新发布必须显式填写 `--category`，避免未填写的内容被静默归入错误分类。`--license`、`--skill-version`、`--royalty-bps` 和 `--max-supply` 有平台默认值。根命令的 `finchip --version` 只显示 CLI 版本。
+新发布必须显式填写 `--summary`、`--description` 和 `--category`。`--summary` 最多 280 个字符，用于快速说明问题、结果和主要边界。`--description` 是完整的能力适配契约，应说明解决的问题、产出、能做与不能做、所需输入或权限、限制、副作用，以及适合和不适合的需求，便于 Agent 搜索后判断是否匹配。它是发布者声明，不是 FinChip 对能力或安全性的认证。
+
+`--license`、`--skill-version`、`--royalty-bps` 和 `--max-supply` 有平台默认值。Skill 包版本必须使用 `--skill-version`；根命令的 `finchip --version` 只显示 CLI 版本。
 
 CLI 对外统一显示并接受 Site canonical slug，例如 `my-skill-finchip`。现有链上 Registry 的技术 slug 仍是 `my-skill_finchip`；CLI 会在链上查询时自动转换，历史 `_finchip` 输入也继续兼容。Publish JSON 的 `slug` 是 Site canonical slug，`onchainSlug` 用于链上诊断和恢复，不需要用户日常记忆。
 
@@ -107,8 +111,10 @@ CLI 对外统一显示并接受 Site canonical slug，例如 `my-skill-finchip`�
 finchip skill publish ./my-skill \
   --slug my-skill \
   --name "My Skill" \
-  --description "Agent-ready skill description" \
+  --summary "Explains EVM transactions and flags the main risks; it does not sign or broadcast transactions." \
+  --description "Problem: Raw EVM transaction data is difficult to assess. Outcome: A structured explanation and risk notes. Can: Decode calls and explain likely effects. Not for: Signing, broadcasting, or guaranteeing safety. Requires: Transaction data and chain context. Produces: A human-readable report. Limits: Results depend on supplied data and supported ABIs. Side effects: None. Good matches: Users reviewing a transaction before signing. Not a match: Users asking the Skill to execute the transaction." \
   --category "Dev Environment" \
+  --skill-version "1.0.0" \
   --price 0.01 \
   --encrypt oracle-v2 \
   --dry-run --json

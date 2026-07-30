@@ -64,6 +64,11 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   assert.match(publishHelp.stdout, /--dry-run/);
   assert.match(publishHelp.stdout, /--yes/);
   assert.match(publishHelp.stdout, /--encrypt <mode>/);
+  assert.match(publishHelp.stdout, /--summary <text>/);
+  assert.match(publishHelp.stdout, /problem.*outcome.*boundary/i);
+  assert.match(publishHelp.stdout, /capability.*fit.*contract/i);
+  assert.match(publishHelp.stdout, /non-matches/i);
+  assert.match(publishHelp.stdout, /side effects/i);
   assert.match(publishHelp.stdout, /--skill-version <version>/);
   assert.doesNotMatch(publishHelp.stdout, /(?:^|\s)--version <version>/m);
   assert.match(publishHelp.stdout, /raw CK.*Site.*Lit\/Chipotle/i);
@@ -83,7 +88,15 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
 
   const home = mkdtempSync(join(tmpdir(), 'finchip-skill-publish-alias-'));
   const env = { HOME: home, FINCHIP_CREDENTIALS_PATH: join(home, 'credentials.json') };
-  const publishArgs = ['package.json', '--slug', 'demo', '--name', 'Demo', '--description', 'Test', '--price', '0.01', '--json'];
+  const publishArgs = [
+    'package.json',
+    '--slug', 'demo',
+    '--name', 'Demo',
+    '--summary', 'Explains the problem, outcome, and principal boundary.',
+    '--description', 'Problem: Test\nOutcome: Test\nCan: Test\nNot for: Other tasks',
+    '--price', '0.01',
+    '--json',
+  ];
   const primary = await runCli(['skill', 'publish', ...publishArgs], env);
   const legacy = await runCli(['publish', ...publishArgs], env);
   assert.equal(primary.code, 3, `${primary.stderr}\n${primary.stdout}`);
@@ -92,6 +105,35 @@ test('skill publish is primary and the legacy publish alias remains hidden and c
   assert.equal(JSON.parse(primary.stdout).code, 'PUBLISH_INVALID');
   assert.match(JSON.parse(primary.stdout).error, /category is required/i);
   assert.equal(JSON.parse(primary.stdout).encryptionMode, 'finchip');
+
+  const missingSummary = await runCli([
+    'skill', 'publish',
+    'package.json',
+    '--slug', 'demo',
+    '--name', 'Demo',
+    '--description', 'Problem: Test',
+    '--category', 'Dev Environment',
+    '--price', '0.01',
+    '--json',
+  ], env);
+  assert.equal(missingSummary.code, 3, `${missingSummary.stderr}\n${missingSummary.stdout}`);
+  assert.equal(JSON.parse(missingSummary.stdout).code, 'PUBLISH_INVALID');
+  assert.match(JSON.parse(missingSummary.stdout).error, /--summary is required/i);
+
+  const longSummary = await runCli([
+    'skill', 'publish',
+    'package.json',
+    '--slug', 'demo',
+    '--name', 'Demo',
+    '--summary', 'x'.repeat(281),
+    '--description', 'Problem: Test',
+    '--category', 'Dev Environment',
+    '--price', '0.01',
+    '--json',
+  ], env);
+  assert.equal(longSummary.code, 3, `${longSummary.stderr}\n${longSummary.stdout}`);
+  assert.equal(JSON.parse(longSummary.stdout).code, 'PUBLISH_INVALID');
+  assert.match(JSON.parse(longSummary.stdout).error, /summary.*280/i);
 
   const customVersion = await runCli([
     'skill', 'publish', ...publishArgs, '--skill-version', '9.9.9',
