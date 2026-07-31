@@ -2,8 +2,8 @@ import {
   existsSync,
   lstatSync,
   readFileSync,
+  readdirSync,
   realpathSync,
-  statSync,
 } from 'fs';
 import { execFileSync } from 'child_process';
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from 'crypto';
@@ -32,6 +32,27 @@ const SENSITIVE_PARTS = new Set([
   '.azure',
   '.kube',
   '.terraform',
+]);
+const GENERATED_PARTS = new Set([
+  'node_modules',
+  '.next',
+  '.nuxt',
+  '.svelte-kit',
+  '.cache',
+  '.parcel-cache',
+  '.turbo',
+  'coverage',
+  'dist',
+  'build',
+  'out',
+  'target',
+  '__pycache__',
+  '.pytest_cache',
+  '.mypy_cache',
+  '.ruff_cache',
+  '.tox',
+  '.venv',
+  'venv',
 ]);
 const SENSITIVE_BASENAMES = new Set([
   '.npmrc',
@@ -72,32 +93,106 @@ export function isSensitiveSourcePath(path) {
     || SENSITIVE_PATH_PATTERNS.some(pattern => pattern.test(normalized));
 }
 
+function generatedSourcePath(path) {
+  return path.split(/[\\/]+/).filter(Boolean)
+    .some(part => GENERATED_PARTS.has(part.toLowerCase()));
+}
+
+function exclusionReason(path, { excludeGenerated = false } = {}) {
+  if (excludeGenerated && generatedSourcePath(path)) return 'generated';
+  if (isSensitiveSourcePath(path)) return 'sensitive';
+  return null;
+}
+
 function gitFiles(directory) {
-  let normalizedDirectory;
+  let isRepository;
   try {
-    normalizedDirectory = realpathSync(directory);
-    execFileSync('git', ['-C', normalizedDirectory, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-  } catch {
-    throw new Error('Directory publishing requires a Git repository. Publish a single file or a prepared ZIP instead.');
+    isRepository = execFileSync(
+      'git',
+      ['-C', directory, 'rev-parse', '--is-inside-work-tree'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    ).trim() === 'true';
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.status === 128) return null;
+    throw new Error(`Could not inspect the source Git repository: ${error instanceof Error ? error.message : 'unknown error'}`);
   }
-  const args = ['-C', normalizedDirectory, 'ls-files', '--cached', '--others', '--exclude-standard', '-z'];
-  const output = execFileSync(
-    'git',
-    args,
-    { encoding: 'buffer' },
-  );
+  if (!isRepository) return null;
+
+  let output;
+  try {
+    output = execFileSync(
+      'git',
+      ['-C', directory, 'ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+      { encoding: 'buffer', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+  } catch (error) {
+    throw new Error(`Could not enumerate the source Git repository: ${error instanceof Error ? error.message : 'unknown error'}`);
+  }
   const candidates = output.toString('utf8').split('\0').filter(Boolean).map(file => {
     const normalizedFile = file.split(/[\\/]+/).join('/');
     return {
-      absolute: join(normalizedDirectory, normalizedFile),
+      absolute: join(directory, normalizedFile),
       relative: normalizedFile,
     };
   });
+  const files = [];
+  const excludedFiles = [];
+  for (const file of candidates) {
+    const reason = exclusionReason(file.relative);
+    if (reason) {
+      excludedFiles.push({ path: file.relative, reason });
+      continue;
+    }
+    const info = lstatSync(file.absolute);
+    if (info.isSymbolicLink()) {
+      excludedFiles.push({ path: file.relative, reason: 'symlink' });
+    } else if (info.isFile()) {
+      files.push(file);
+    } else {
+      excludedFiles.push({ path: file.relative, reason: 'unsupported' });
+    }
+  }
   return {
-    files: candidates.filter(file => !isSensitiveSourcePath(file.relative)),
-    excludedSensitivePaths: candidates
-      .filter(file => isSensitiveSourcePath(file.relative))
-      .map(file => file.relative),
+    collectionMode: 'git',
+    files,
+    excludedFiles,
+  };
+}
+
+function directoryFiles(directory) {
+  const files = [];
+  const excludedFiles = [];
+
+  function walk(absoluteDirectory, relativeDirectory = '') {
+    const entries = readdirSync(absoluteDirectory, { withFileTypes: true })
+      .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+    for (const entry of entries) {
+      const relative = relativeDirectory
+        ? `${relativeDirectory}/${entry.name}`
+        : entry.name;
+      const reason = exclusionReason(relative, { excludeGenerated: true });
+      if (reason) {
+        excludedFiles.push({ path: relative, reason });
+        continue;
+      }
+      const absolute = join(absoluteDirectory, entry.name);
+      if (entry.isSymbolicLink()) {
+        excludedFiles.push({ path: relative, reason: 'symlink' });
+      } else if (entry.isDirectory()) {
+        walk(absolute, relative);
+      } else if (entry.isFile()) {
+        files.push({ absolute, relative });
+      } else {
+        excludedFiles.push({ path: relative, reason: 'unsupported' });
+      }
+    }
+  }
+
+  walk(directory);
+  return {
+    collectionMode: 'directory',
+    files,
+    excludedFiles,
   };
 }
 
@@ -110,20 +205,27 @@ export function collectPublishSource(inputPath) {
     return {
       root: dirname(absolute),
       files: [{ absolute, relative: basename(absolute) }],
+      collectionMode: 'file',
+      excludedFiles: [],
       excludedSensitivePaths: [],
       primaryIndex: 0,
       buildZip: false,
     };
   }
   if (!info.isDirectory()) throw new Error('Source must be a regular file or directory.');
-  const collected = gitFiles(absolute);
-  const files = collected.files.filter(file => lstatSync(file.absolute).isFile());
-  if (!files.length) throw new Error('No publishable files remain after Git ignore and sensitive-file filtering.');
+  const root = realpathSync(absolute);
+  const collected = gitFiles(root) || directoryFiles(root);
+  const files = collected.files;
+  if (!files.length) throw new Error('No publishable files remain after source safety filtering.');
   const primaryIndex = selectPrimaryIndex(files.map(file => file.relative));
   return {
-    root: absolute,
+    root,
     files,
-    excludedSensitivePaths: collected.excludedSensitivePaths,
+    collectionMode: collected.collectionMode,
+    excludedFiles: collected.excludedFiles,
+    // Retain the original JSON field for compatibility. It historically also
+    // included dependency trees such as node_modules, not only credentials.
+    excludedSensitivePaths: collected.excludedFiles.map(file => file.path),
     primaryIndex,
     buildZip: files.length > 1,
   };
