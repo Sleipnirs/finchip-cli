@@ -1,13 +1,8 @@
-import { privateKeyToAccount } from 'viem/accounts';
 import { loadConfig, resolveWalletPrivateKey, WalletKeyError } from '../config.js';
 import { FinchipAuthClient, FinchipAuthError } from '../auth-client.js';
+import { loginTask } from './task.js';
+import { parseFinchipTaskUrl } from '../site-origin.js';
 import { emitFailure, emitResult, fmtAddr, hd, inf, ok, sep, wrn } from '../utils.js';
-
-function resolvePrivateKey() {
-  const cfg = loadConfig();
-  const privateKey = resolveWalletPrivateKey(cfg);
-  return { privateKey, chainId: Number(cfg.chain) || 56 };
-}
 
 function accountSummary(session) {
   return {
@@ -33,59 +28,29 @@ export async function cmdLogin(options = {}) {
     const client = new FinchipAuthClient();
     if (client.hasPersistedCredentials()) {
       const current = await client.getSession();
-      if (current.authenticated) {
+      if (current.authenticated && current.account?.clientKind === 'cli' && current.wallet?.clientKind === 'cli') {
         throw new FinchipAuthError('AUTH_ALREADY_ACTIVE', 'A FinChip session is already active. Run `finchip logout` first.', 3);
       }
       client.clearCredentials();
     }
 
-    const { privateKey, chainId } = resolvePrivateKey();
-    const account = privateKeyToAccount(privateKey);
-    const walletAddr = account.address.toLowerCase();
-    const challenge = await client.json('/api/auth/wallet/challenge', {
+    // Fail on a missing or disabled wallet before creating remote login state.
+    resolveWalletPrivateKey(loadConfig());
+
+    const created = await client.json('/api/auth/cli-login/requests', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ wallet_addr: walletAddr, preferred_chain_id: chainId }),
-      persistCookies: false,
+      body: JSON.stringify({ returnTo: '/dashboard' }),
     });
-    if (!challenge.response.ok || typeof challenge.payload?.message !== 'string') {
-      throw new FinchipAuthError('AUTH_CHALLENGE_FAILED', challenge.payload?.error || 'Failed to create wallet login challenge.', challenge.response.status >= 500 ? 5 : 3);
+    if (!created.response.ok || typeof created.payload?.taskUrl !== 'string') {
+      throw new FinchipAuthError(created.payload?.code || 'AUTH_CHALLENGE_FAILED', created.payload?.error || 'Failed to create CLI login request.', created.response.status >= 500 ? 5 : 3);
     }
-
-    let signature;
-    try {
-      signature = await account.signMessage({ message: challenge.payload.message });
-    } catch {
-      throw new FinchipAuthError('AUTH_SIGNATURE_FAILED', 'Failed to sign the FinChip wallet challenge.', 3);
-    }
-
-    const login = await client.json('/api/auth/wallet/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        wallet_addr: walletAddr,
-        message: challenge.payload.message,
-        signature,
-        signature_chain_id: chainId,
-      }),
-      persistCookies: false,
-    });
-    if (!login.response.ok) {
-      if (login.payload?.code === 'ACCOUNT_MERGE_REQUIRED') {
-        throw new FinchipAuthError('AUTH_ACCOUNT_MERGE_REQUIRED', login.payload.error || 'Account merge confirmation is required.', 3);
-      }
-      throw new FinchipAuthError('AUTH_SESSION_INVALID', login.payload?.error || 'FinChip wallet login failed.', login.response.status >= 500 ? 5 : 3);
-    }
-
+    await loginTask(parseFinchipTaskUrl(created.payload.taskUrl), { authClient: client });
     const session = await client.getSession();
     const sessionWallet = session.wallet?.walletAddr?.toLowerCase();
-    if (!session.authenticated) {
+    if (!session.authenticated || session.account?.clientKind !== 'cli' || session.wallet?.clientKind !== 'cli') {
       client.clearCredentials();
-      throw new FinchipAuthError('AUTH_SESSION_INVALID', 'FinChip did not create an authenticated account session.', 3);
-    }
-    if (sessionWallet !== walletAddr) {
-      client.clearCredentials();
-      throw new FinchipAuthError('AUTH_WALLET_MISMATCH', 'Authenticated wallet does not match the signing wallet.', 3);
+      throw new FinchipAuthError('AUTH_SESSION_INVALID', 'FinChip did not create an authenticated CLI session.', 3);
     }
     client.persistCredentials();
 
@@ -97,7 +62,7 @@ export async function cmdLogin(options = {}) {
       inf(`origin:   ${client.origin}`);
       inf(`username: ${result.account.username || '(not set)'}`);
       inf(`userId:   ${result.account.userId}`);
-      inf(`wallet:   ${fmtAddr(result.account.walletAddr)}`);
+      inf(`wallet:   ${fmtAddr(sessionWallet)}`);
     });
   } catch (error) {
     outputFailure(options, error);
@@ -108,16 +73,16 @@ export async function cmdStatus(options = {}) {
   try {
     const client = new FinchipAuthClient();
     if (!client.hasPersistedCredentials()) {
-      const result = { ok: false, code: 'AUTH_REQUIRED', authenticated: false, origin: client.origin, account: null };
+      const result = { ok: false, code: 'SESSION_REAUTH_REQUIRED', authenticated: false, origin: client.origin, account: null };
       emitResult(options, result, () => inf(`Not authenticated with ${client.origin}. Run \`finchip login\`.`));
       process.exitCode = 2;
       return;
     }
     const session = await client.getSession();
-    if (!session.authenticated) {
+    if (!session.authenticated || session.account?.clientKind !== 'cli' || session.wallet?.clientKind !== 'cli') {
       client.clearCredentials();
-      const result = { ok: false, code: 'AUTH_REQUIRED', authenticated: false, origin: client.origin, account: null };
-      emitResult(options, result, () => inf('FinChip session is expired or revoked. Run `finchip login`.'));
+      const result = { ok: false, code: 'SESSION_REAUTH_REQUIRED', authenticated: false, origin: client.origin, account: null };
+      emitResult(options, result, () => inf('FinChip CLI session is expired, revoked, or invalid. Run `finchip login`.'));
       process.exitCode = 2;
       return;
     }

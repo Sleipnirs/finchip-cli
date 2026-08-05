@@ -150,7 +150,8 @@ test('acquire maps preflight and post-broadcast failures to stable contracts', a
   const broadcast = dependencies({ writeError: true });
   await assert.rejects(
     () => acquireSkill({ slug: 'audit', yes: true }, broadcast),
-    error => error.code === 'ACQUIRE_TX_FAILED'
+    error => error.code === 'ACQUIRE_RESULT_UNKNOWN'
+      && error.details.retrySafe === false
       && !Object.hasOwn(error.details, 'ok')
   );
 });
