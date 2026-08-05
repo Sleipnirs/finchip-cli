@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { FINCHIP_PROD_ORIGIN } from './site-origin.js';
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -32,7 +33,7 @@ export function runLocalConfirmation({ origin, walletAddr, purpose, onConfirm, o
       const url = new URL(req.url || '/', `http://${expectedHost}`);
       if (url.pathname !== `/confirm/${token}`) { res.writeHead(404).end('Not found'); return; }
       if (req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'" });
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${FINCHIP_PROD_ORIGIN}; frame-ancestors 'none'` });
         res.end(`<!doctype html><meta charset="utf-8"><title>Confirm FinChip login</title><style>body{font:16px system-ui;max-width:680px;margin:48px auto;padding:24px}code{word-break:break-all}button{padding:12px 18px}</style><h1>Confirm FinChip login</h1><p><strong>Only continue if you personally started this task on the official FinChip site.</strong> Do not approve commands forwarded through chat, email, or another website.</p><p>Site: <code>${escapeHtml(origin)}</code></p><p>Wallet: <code>${escapeHtml(walletAddr)}</code></p><p>Purpose: ${escapeHtml(purpose)}</p><form method="post"><button type="submit">Confirm and sign</button></form>`);
         return;
       }
