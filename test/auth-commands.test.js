@@ -65,7 +65,7 @@ test('login, status, repeated login, and logout complete the cookie lifecycle', 
       }
       if (req.url === '/api/auth/cli-login/requests/11111111-1111-4111-8111-111111111111/claim' && req.method === 'POST') {
         assert.equal(body.walletAddr, WALLET_ADDR);
-        assert.equal(body.cliVersion, '0.5.1');
+        assert.equal(body.cliVersion, '0.5.2');
         res.end(JSON.stringify({ ok: true, message: 'FinChip test Agent login challenge' }));
         return;
       }
@@ -89,9 +89,10 @@ test('login, status, repeated login, and logout complete the cookie lifecycle', 
         }
         const loginBody = {
           authenticated: true,
+          authMode: 'agent_cli',
           identity: { userId: 'user-1', username: 'agent_user', walletAddr: body.wallet_addr },
-          account: { userId: 'user-1', clientKind: 'cli' },
-          wallet: { walletAddr: WALLET_ADDR, clientKind: 'cli' },
+          account: { userId: 'user-1', clientKind: 'cli', authMode: 'agent_cli' },
+          wallet: { walletAddr: WALLET_ADDR, clientKind: 'cli', authMode: 'agent_cli' },
           connections: {
             wallet: { walletAddr: WALLET_ADDR, signatureKind: 'eoa', verifiedChainIds: [56] },
             github: null,
