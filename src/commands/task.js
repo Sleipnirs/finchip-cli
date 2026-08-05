@@ -10,7 +10,7 @@ import { assertSameFinchipOrigin, parseFinchipTaskUrl } from '../site-origin.js'
 import { listTaskRecords, loadTaskRecord, saveTaskRecord } from '../task-records.js';
 import { emitFailure, emitResult, hd, inf, ok, sep, wrn } from '../utils.js';
 
-const CLI_VERSION = '0.5.1';
+const CLI_VERSION = '0.5.2';
 const QUERY_ONLY_STATUSES = new Set(['broadcasting', 'broadcast', 'result_unknown', 'confirmed', 'failed', 'denied', 'cancelled', 'expired']);
 const AMBIGUOUS_BROADCAST_ERRORS = new Set([
   'RATE_LIMITED',
@@ -57,7 +57,13 @@ async function loginTask(parsed, dependencies = {}) {
     },
   });
   const session = await auth.getSession();
-  if (!session.authenticated || session.account?.clientKind !== 'cli' || session.wallet?.clientKind !== 'cli' || session.wallet?.walletAddr?.toLowerCase() !== walletAddr) {
+  if (!session.authenticated
+    || session.authMode !== 'agent_cli'
+    || session.account?.clientKind !== 'cli'
+    || session.account?.authMode !== 'agent_cli'
+    || session.wallet?.clientKind !== 'cli'
+    || session.wallet?.authMode !== 'agent_cli'
+    || session.wallet?.walletAddr?.toLowerCase() !== walletAddr) {
     auth.clearCredentials();
     throw new FinchipAuthError('AUTH_SESSION_INVALID', 'FinChip did not create the expected wallet-bound CLI session.', 3);
   }
@@ -76,12 +82,16 @@ async function preflightIntent(intent, dependencies = {}) {
 }
 
 async function claimActionTask(parsed, dependencies = {}) {
-  const { walletAddr } = selectedWallet();
+  return claimActionTaskById(parsed.taskId, parsed.claimSecret, dependencies);
+}
+
+export async function claimActionTaskById(taskId, claimSecret = null, dependencies = {}) {
+  const { walletAddr } = (dependencies.selectedWallet || selectedWallet)();
   const auth = dependencies.authClient || new FinchipAuthClient(dependencies);
   const client = dependencies.actionClient || new ActionIntentClient({ authClient: auth, cliVersion: CLI_VERSION });
   await client.ensureCliSession(walletAddr);
   await client.assertCompatible();
-  const { intent } = await client.claim(parsed.taskId, parsed.claimSecret);
+  const { intent } = await client.claim(taskId, claimSecret);
   const { plan } = await preflightIntent(intent, dependencies);
   const updated = await client.putPlan(intent.id, plan);
   saveTaskRecord({ taskId: intent.id, kind: intent.kind, origin: auth.origin, walletAddr, status: updated.intent.status, planHash: plan.planHash, plan, broadcastAttempted: false });
@@ -138,7 +148,7 @@ async function runParsedTask(parsed, options = {}, dependencies = {}) {
 }
 
 export async function resumeTask(taskId, options = {}, dependencies = {}) {
-  const { walletAddr } = selectedWallet();
+  const { walletAddr } = (dependencies.selectedWallet || selectedWallet)();
   const auth = dependencies.authClient || new FinchipAuthClient(dependencies);
   const client = dependencies.actionClient || new ActionIntentClient({ authClient: auth, cliVersion: CLI_VERSION });
   await client.ensureCliSession(walletAddr);
@@ -195,6 +205,24 @@ export async function denyTask(taskId, options = {}, dependencies = {}) {
   return { ok: true, code: 'TASK_DENIED', taskId, status: denied.intent.status };
 }
 
+export async function listTasks(options = {}, dependencies = {}) {
+  const { walletAddr } = (dependencies.selectedWallet || selectedWallet)();
+  const auth = dependencies.authClient || new FinchipAuthClient(dependencies);
+  const client = dependencies.actionClient || new ActionIntentClient({ authClient: auth, cliVersion: CLI_VERSION });
+  await client.ensureCliSession(walletAddr);
+  await client.assertCompatible();
+  return { ok: true, code: 'TASK_LIST', local: listTaskRecords(), ...(await client.list(options.status)) };
+}
+
+export async function showTask(taskId, dependencies = {}) {
+  const { walletAddr } = (dependencies.selectedWallet || selectedWallet)();
+  const auth = dependencies.authClient || new FinchipAuthClient(dependencies);
+  const client = dependencies.actionClient || new ActionIntentClient({ authClient: auth, cliVersion: CLI_VERSION });
+  await client.ensureCliSession(walletAddr);
+  await client.assertCompatible();
+  return { ok: true, code: 'TASK_STATUS', ...(await client.show(taskId)) };
+}
+
 function renderTask(result) {
   hd('FinChip Agent Task'); sep(); ok(`${result.code} · ${result.taskId || ''}`); inf(`status: ${result.status || 'complete'}`);
   if (result.plan) {
@@ -207,9 +235,10 @@ function renderTask(result) {
 async function command(options, operation) { try { const result = await operation(); emitResult(options, result, () => renderTask(result)); } catch (error) { emitFailure(options, error); } }
 
 export async function cmdTaskRun(taskUrl, options = {}) { return command(options, () => runParsedTask(parseFinchipTaskUrl(taskUrl), options)); }
+export async function cmdTaskClaim(taskId, options = {}) { return command(options, () => claimActionTaskById(taskId, null)); }
 export async function cmdTaskResume(taskId, options = {}) { return command(options, () => resumeTask(taskId, options)); }
 export async function cmdTaskDeny(taskId, options = {}) { return command(options, () => denyTask(taskId, options)); }
-export async function cmdTaskShow(taskId, options = {}) { return command(options, async () => ({ ok: true, code: 'TASK_STATUS', ...(await new ActionIntentClient({ cliVersion: CLI_VERSION }).show(taskId)) })); }
-export async function cmdTaskList(options = {}) { return command(options, async () => ({ ok: true, code: 'TASK_LIST', local: listTaskRecords(), ...(await new ActionIntentClient({ cliVersion: CLI_VERSION }).list(options.status)) })); }
+export async function cmdTaskShow(taskId, options = {}) { return command(options, () => showTask(taskId)); }
+export async function cmdTaskList(options = {}) { return command(options, () => listTasks(options)); }
 
 export { loginTask, runParsedTask };

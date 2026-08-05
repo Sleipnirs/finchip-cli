@@ -16,6 +16,15 @@ function accountSummary(session) {
   };
 }
 
+function isAgentCliSession(session) {
+  return session?.authenticated
+    && session.authMode === 'agent_cli'
+    && session.account?.clientKind === 'cli'
+    && session.account?.authMode === 'agent_cli'
+    && session.wallet?.clientKind === 'cli'
+    && session.wallet?.authMode === 'agent_cli';
+}
+
 function outputFailure(options, error) {
   const normalized = error instanceof FinchipAuthError || error instanceof WalletKeyError
     ? error
@@ -28,7 +37,7 @@ export async function cmdLogin(options = {}) {
     const client = new FinchipAuthClient();
     if (client.hasPersistedCredentials()) {
       const current = await client.getSession();
-      if (current.authenticated && current.account?.clientKind === 'cli' && current.wallet?.clientKind === 'cli') {
+      if (isAgentCliSession(current)) {
         throw new FinchipAuthError('AUTH_ALREADY_ACTIVE', 'A FinChip session is already active. Run `finchip logout` first.', 3);
       }
       client.clearCredentials();
@@ -48,7 +57,7 @@ export async function cmdLogin(options = {}) {
     await loginTask(parseFinchipTaskUrl(created.payload.taskUrl), { authClient: client });
     const session = await client.getSession();
     const sessionWallet = session.wallet?.walletAddr?.toLowerCase();
-    if (!session.authenticated || session.account?.clientKind !== 'cli' || session.wallet?.clientKind !== 'cli') {
+    if (!isAgentCliSession(session)) {
       client.clearCredentials();
       throw new FinchipAuthError('AUTH_SESSION_INVALID', 'FinChip did not create an authenticated CLI session.', 3);
     }
@@ -79,7 +88,7 @@ export async function cmdStatus(options = {}) {
       return;
     }
     const session = await client.getSession();
-    if (!session.authenticated || session.account?.clientKind !== 'cli' || session.wallet?.clientKind !== 'cli') {
+    if (!isAgentCliSession(session)) {
       client.clearCredentials();
       const result = { ok: false, code: 'SESSION_REAUTH_REQUIRED', authenticated: false, origin: client.origin, account: null };
       emitResult(options, result, () => inf('FinChip CLI session is expired, revoked, or invalid. Run `finchip login`.'));

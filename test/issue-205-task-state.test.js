@@ -6,7 +6,73 @@ import {
   validateTaskApproval,
 } from '../src/task-state.js';
 import { ACTION_INTENT_SCHEMA_HASH, buildAcquireExecutionPlan } from '../src/action-intent-contracts.js';
+import { ActionIntentClient } from '../src/action-intent-client.js';
 import { authorizeBroadcastAttempt, refreshQueryOnlyTask } from '../src/commands/task.js';
+
+test('wallet-bound Inbox claim omits copied secrets and keeps the exact Task id', async () => {
+  const calls = [];
+  const authClient = {
+    async json(path, options) {
+      calls.push({ path, body: JSON.parse(options.body) });
+      return { response: { ok: true }, payload: { ok: true } };
+    },
+  };
+  const client = new ActionIntentClient({ authClient, cliVersion: '0.5.2' });
+  const taskId = '123e4567-e89b-42d3-a456-426614174000';
+  await client.claim(taskId);
+  assert.deepEqual(calls, [{
+    path: `/api/action-intents/${taskId}/claim`,
+    body: { cliVersion: '0.5.2' },
+  }]);
+});
+
+test('Action Intent commands require an Agent-mode CLI session for the selected wallet', async () => {
+  const walletAddr = '0x1111111111111111111111111111111111111111';
+  const valid = {
+    authenticated: true,
+    authMode: 'agent_cli',
+    account: { clientKind: 'cli', authMode: 'agent_cli' },
+    wallet: { clientKind: 'cli', authMode: 'agent_cli', walletAddr },
+  };
+  const authClient = {
+    hasPersistedCredentials: () => true,
+    clearCredentials: () => assert.fail('valid credentials must not be cleared'),
+    getSession: async () => valid,
+  };
+  const client = new ActionIntentClient({ authClient, cliVersion: '0.5.2' });
+  assert.equal((await client.ensureCliSession(walletAddr)).authMode, 'agent_cli');
+
+  authClient.getSession = async () => ({ ...valid, authMode: 'browser_wallet' });
+  await assert.rejects(
+    client.ensureCliSession(walletAddr),
+    error => error.code === 'SESSION_REAUTH_REQUIRED',
+  );
+});
+
+test('Action Intent compatibility enforces the Site patch-version floor', async () => {
+  const compatibleConfig = {
+    schemaHash: ACTION_INTENT_SCHEMA_HASH,
+    supportedActions: ['skill.acquire.v1'],
+    minimumCliVersion: '0.5.2',
+  };
+  const compatible = new ActionIntentClient({ cliVersion: '0.5.2' });
+  compatible.config = async () => compatibleConfig;
+  assert.equal((await compatible.assertCompatible()).minimumCliVersion, '0.5.2');
+
+  const outdated = new ActionIntentClient({ cliVersion: '0.5.1' });
+  outdated.config = async () => compatibleConfig;
+  await assert.rejects(
+    outdated.assertCompatible(),
+    error => error.code === 'CLIENT_VERSION_UNSUPPORTED',
+  );
+
+  const unverifiedMinor = new ActionIntentClient({ cliVersion: '0.6.0' });
+  unverifiedMinor.config = async () => compatibleConfig;
+  await assert.rejects(
+    unverifiedMinor.assertCompatible(),
+    error => error.code === 'CLIENT_VERSION_UNSUPPORTED',
+  );
+});
 
 test('broadcasting or later is query-only and can never call writeContract again', () => {
   for (const status of ['broadcasting', 'broadcast', 'result_unknown', 'confirmed', 'failed']) {

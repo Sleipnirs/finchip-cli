@@ -32,7 +32,7 @@ import { cmdChains }                                        from '../src/command
 import { cmdDoctor }                                        from '../src/commands/doctor.js';
 import { cmdPay }                                           from '../src/commands/pay.js';
 import { cmdLogin, cmdStatus, cmdLogout }                    from '../src/commands/auth.js';
-import { cmdTaskRun, cmdTaskList, cmdTaskShow, cmdTaskResume, cmdTaskDeny } from '../src/commands/task.js';
+import { cmdTaskRun, cmdTaskClaim, cmdTaskList, cmdTaskShow, cmdTaskResume, cmdTaskDeny } from '../src/commands/task.js';
 import { cmdSiteOpen }                                      from '../src/commands/site.js';
 import {
   cmdWalletCreate,
@@ -43,8 +43,9 @@ import {
 import { registerSkillCommands }                             from '../src/commands/skill.js';
 import { registerDeprecatedPublishCommands }                 from '../src/commands/deprecated.js';
 import { cmdDownload }                                       from '../src/commands/download.js';
-import { c, emitFailure }                                   from '../src/utils.js';
+import { c, emitFailure, setGlobalWarnings }                from '../src/utils.js';
 import { assertNoPublicOriginOverride }                     from '../src/site-origin.js';
+import { checkCliVersionPolicy, formatCliUpdateWarning }    from '../src/version-policy.js';
 
 const program = new Command();
 let activeCommandOptions = {};
@@ -85,6 +86,11 @@ task.command('list')
   .option('--status <status>', 'Filter Site Tasks by status')
   .option('--json', 'Emit machine-readable JSON')
   .action(cmdTaskList);
+
+task.command('claim <task-id>')
+  .description('Claim one exact pending wallet-bound Site Task and prepare its dry-run plan')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdTaskClaim);
 
 task.command('show <task-id>')
   .description('Show the current Site state for a Task')
@@ -344,9 +350,14 @@ ${c.gray}A2A docs:${c.reset} https://finchip.ai/a2aentry
 ${c.gray}npm:${c.reset}      https://www.npmjs.com/package/finchip-cli
 `);
 
-program.hook('preAction', (_rootCommand, actionCommand) => {
+program.hook('preAction', async (_rootCommand, actionCommand) => {
   activeCommandOptions = actionCommand.opts();
   assertNoPublicOriginOverride(process.env);
+  const { warning } = await checkCliVersionPolicy({ currentVersion: pkg.version });
+  setGlobalWarnings(warning ? [warning] : []);
+  if (warning && !activeCommandOptions.json) {
+    process.stderr.write(`${formatCliUpdateWarning(warning)}\n`);
+  }
 });
 
 try {

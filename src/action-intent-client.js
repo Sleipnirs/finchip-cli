@@ -1,5 +1,6 @@
 import { FinchipAuthClient, FinchipAuthError } from './auth-client.js';
 import { ACTION_INTENT_SCHEMA_HASH } from './action-intent-contracts.js';
+import { isCliVersionSupported } from './version-policy.js';
 
 function errorFor(response, payload) {
   const code = payload?.code || (response.status === 401 ? 'SESSION_REAUTH_REQUIRED' : 'TASK_REQUEST_FAILED');
@@ -32,6 +33,9 @@ export class ActionIntentClient {
     if (session.account.clientKind !== 'cli' || session.wallet.clientKind !== 'cli') {
       throw new FinchipAuthError('SESSION_REAUTH_REQUIRED', 'The saved credentials are not a CLI session. Run `finchip login`.', 2);
     }
+    if (session.authMode !== 'agent_cli' || session.account.authMode !== 'agent_cli' || session.wallet.authMode !== 'agent_cli') {
+      throw new FinchipAuthError('SESSION_REAUTH_REQUIRED', 'The saved credentials are not an Agent CLI session. Run `finchip login`.', 2);
+    }
     if (expectedWallet && session.wallet.walletAddr?.toLowerCase() !== expectedWallet.toLowerCase()) {
       throw new FinchipAuthError('WALLET_MISMATCH', 'FinChip CLI session wallet does not match the selected Agent wallet.', 3);
     }
@@ -41,7 +45,11 @@ export class ActionIntentClient {
   config() { return this.json('/api/action-intents/config'); }
   list(status) { return this.json(`/api/action-intents${status ? `?status=${encodeURIComponent(status)}` : ''}`); }
   show(id) { return this.json(`/api/action-intents/${id}`); }
-  claim(id, claimSecret) { return this.json(`/api/action-intents/${id}/claim`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ claimSecret, cliVersion: this.cliVersion }) }); }
+  claim(id, claimSecret = null) {
+    const body = { cliVersion: this.cliVersion };
+    if (claimSecret) body.claimSecret = claimSecret;
+    return this.json(`/api/action-intents/${id}/claim`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
   heartbeat(id) { return this.json(`/api/action-intents/${id}/heartbeat`, { method: 'POST' }); }
   putPlan(id, plan) { return this.json(`/api/action-intents/${id}/execution-plan`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan) }); }
   decide(id, decision, planHash, reasonCode) { return this.json(`/api/action-intents/${id}/decision`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, planHash, reasonCode }) }); }
@@ -53,7 +61,7 @@ export class ActionIntentClient {
 
   async assertCompatible() {
     const config = await this.config();
-    if (config.schemaHash !== ACTION_INTENT_SCHEMA_HASH || !config.supportedActions?.includes('skill.acquire.v1')) {
+    if (config.schemaHash !== ACTION_INTENT_SCHEMA_HASH || !config.supportedActions?.includes('skill.acquire.v1') || !isCliVersionSupported(this.cliVersion, config.minimumCliVersion)) {
       throw new FinchipAuthError('CLIENT_VERSION_UNSUPPORTED', 'Site Action Intent contract is not compatible with this CLI.', 3);
     }
     return config;

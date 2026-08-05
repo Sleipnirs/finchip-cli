@@ -84,6 +84,21 @@ export function fmtTxLink(hash, chainId) {
 
 // ── Output mode (text vs json) ───────────────────────────────────────────────
 let _outputMode = 'text';
+let _globalWarnings = [];
+
+export function setGlobalWarnings(warnings = []) {
+  _globalWarnings = Array.isArray(warnings) ? warnings.filter(Boolean) : [];
+}
+
+function withGlobalWarnings(result) {
+  if (_globalWarnings.length === 0) return result;
+  const existing = Array.isArray(result?.warnings) ? result.warnings : [];
+  const warningCodes = new Set(existing.map(warning => warning?.code));
+  return {
+    ...result,
+    warnings: [...existing, ..._globalWarnings.filter(warning => !warningCodes.has(warning.code))],
+  };
+}
 
 export function setOutputMode(mode) {
   _outputMode = (mode === 'json') ? 'json' : 'text';
@@ -102,7 +117,7 @@ export function isJsonMode() {
  */
 export function emit(result) {
   if (_outputMode === 'json') {
-    process.stdout.write(JSON.stringify(result) + '\n');
+    process.stdout.write(JSON.stringify(withGlobalWarnings(result)) + '\n');
   }
   // In text mode, the caller already pretty-printed; this is a no-op.
 }
@@ -117,7 +132,7 @@ export class CliError extends Error {
 }
 
 export function emitResult(options, result, renderText) {
-  if (options?.json) process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (options?.json) process.stdout.write(`${JSON.stringify(withGlobalWarnings(result))}\n`);
   else renderText();
 }
 
