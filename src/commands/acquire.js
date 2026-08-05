@@ -71,8 +71,8 @@ function validateOptions(options) {
     }
   }
   return {
-    maxPriceWei: parseBudget(options.maxPrice, '--max-price'),
-    maxGasFeeWei: parseBudget(options.maxGasFee, '--max-gas-fee'),
+    maxPriceWei: options.maxPriceWei == null ? parseBudget(options.maxPrice, '--max-price') : BigInt(String(options.maxPriceWei)),
+    maxGasFeeWei: options.maxGasFeeWei == null ? parseBudget(options.maxGasFee, '--max-gas-fee') : BigInt(String(options.maxGasFeeWei)),
   };
 }
 
@@ -388,7 +388,7 @@ async function preflight(publicClient, deployment, account, tokenStandard, optio
   };
 }
 
-export async function acquireSkill(options = {}, providedDependencies = {}) {
+export async function prepareAcquirePlan(options = {}, providedDependencies = {}) {
   const budgets = validateOptions(options);
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...providedDependencies };
   const deployment = await resolveDeployment(options, dependencies);
@@ -445,31 +445,17 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
     skipIfHeld: !options.force,
     ...budgets,
   });
-  const preview = prepared.result;
+  return { ...prepared, dependencies, deployment, account, privateKey, publicClient, preview: prepared.result };
+}
 
-  if (preview.alreadyHeld && !options.force) {
-    return {
-      ...preview,
-      code: 'ACQUIRE_ALREADY_HELD',
-      confirmationRequired: false,
-    };
-  }
-  if (options.dryRun) return { ...preview, code: 'ACQUIRE_DRY_RUN' };
-  if (!options.yes) {
-    throw new AcquireError(
-      'ACQUIRE_CONFIRM_REQUIRED',
-      'Purchase preflight passed. Re-run with --yes to broadcast, or --dry-run for a successful read-only result.',
-      3,
-      failureDetails(preview)
-    );
-  }
-
+export async function executeAcquireWithWriteContract(prepared, hooks = {}) {
+  const { dependencies, deployment, account, privateKey, publicClient, preview } = prepared;
   let walletClient;
   try {
     ({ client: walletClient } = dependencies.walletClientFactory(
       deployment.chain.id,
       privateKey,
-      cfg.rpc
+      dependencies.loadConfig().rpc
     ));
   } catch {
     throw new AcquireError(
@@ -480,6 +466,7 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
     );
   }
 
+  if (hooks.beforeBroadcast) await hooks.beforeBroadcast(preview);
   let txHash;
   try {
     txHash = await walletClient.writeContract({
@@ -489,12 +476,13 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
     });
   } catch {
     throw new AcquireError(
-      'ACQUIRE_TX_FAILED',
-      'The purchase transaction could not be broadcast.',
+      'ACQUIRE_RESULT_UNKNOWN',
+      'The wallet/RPC send result is unknown. Do not retry automatically; inspect the Site task and on-chain state.',
       5,
-      failureDetails(preview)
+      failureDetails(preview, { txHash: null, retrySafe: false })
     );
   }
+  if (hooks.onTxHash) await hooks.onTxHash(txHash, preview);
 
   let receipt;
   try {
@@ -516,7 +504,7 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
       'ACQUIRE_TX_FAILED',
       'The purchase transaction reverted.',
       5,
-      failureDetails(preview, { txHash, blockNumber: receipt.blockNumber?.toString() ?? null })
+      failureDetails(preview, { txHash, blockNumber: receipt.blockNumber?.toString() ?? null, retrySafe: false })
     );
   }
 
@@ -552,6 +540,30 @@ export async function acquireSkill(options = {}, providedDependencies = {}) {
     txHash,
     blockNumber: receipt.blockNumber?.toString() ?? null,
   };
+}
+
+export async function acquireSkill(options = {}, providedDependencies = {}) {
+  const prepared = await prepareAcquirePlan(options, providedDependencies);
+  const preview = prepared.preview;
+
+  if (preview.alreadyHeld && !options.force) {
+    return {
+      ...preview,
+      code: 'ACQUIRE_ALREADY_HELD',
+      confirmationRequired: false,
+    };
+  }
+  if (options.dryRun) return { ...preview, code: 'ACQUIRE_DRY_RUN' };
+  if (!options.yes) {
+    throw new AcquireError(
+      'ACQUIRE_CONFIRM_REQUIRED',
+      'Purchase preflight passed. Re-run with --yes to broadcast, or --dry-run for a successful read-only result.',
+      3,
+      failureDetails(preview)
+    );
+  }
+
+  return executeAcquireWithWriteContract(prepared);
 }
 
 function renderPreflight(result) {

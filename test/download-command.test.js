@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import { writePrivateBinaryFile } from '../src/private-files.js';
 import { saveOriginCredentials } from '../src/auth-client.js';
+import { privateKeyToAccount } from 'viem/accounts';
 
 const CHIP = '0x1111111111111111111111111111111111111111';
 
@@ -58,6 +59,8 @@ test('private binary output is atomic, refuses overwrite, and is user-only on PO
 });
 
 test('plain download resolves the canonical deployment, uses cookie access, and emits stable JSON', async () => {
+  const privateKey = `0x${'22'.repeat(32)}`;
+  const walletAddr = privateKeyToAccount(privateKey).address;
   const requests = [];
   const server = createServer((req, res) => {
     const chunks = [];
@@ -69,7 +72,7 @@ test('plain download resolves the canonical deployment, uses cookie access, and 
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({
           authenticated: true,
-          wallet: { walletAddr: '0x2222222222222222222222222222222222222222' },
+          wallet: { walletAddr },
           identity: { userId: 'user-1' },
         }));
         return;
@@ -107,6 +110,10 @@ test('plain download resolves the canonical deployment, uses cookie access, and 
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
   const root = mkdtempSync(join(tmpdir(), 'finchip-download-command-'));
+  const walletPath = join(root, 'agent.key');
+  writeFileSync(walletPath, `${privateKey}\n`);
+  mkdirSync(join(root, '.finchip'), { recursive: true });
+  writeFileSync(join(root, '.finchip', 'config.json'), JSON.stringify({ privateKeyFile: walletPath, wallet: walletAddr, chain: 56 }));
   const credentialsPath = join(root, 'credentials.json');
   const outputDir = join(root, 'output');
   saveOriginCredentials(origin, {
@@ -118,6 +125,8 @@ test('plain download resolves the canonical deployment, uses cookie access, and 
       FINCHIP_API_URL: origin,
       FINCHIP_CREDENTIALS_PATH: credentialsPath,
       FINCHIP_PRIVATE_KEY: '',
+      HOME: root,
+      USERPROFILE: root,
     });
     assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
     const payload = JSON.parse(result.stdout);

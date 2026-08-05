@@ -25,7 +25,7 @@ npx finchip-cli@latest --help
 创建低余额专用钱包，不要使用个人钱包或 treasury 钱包。CLI 不提供备份或恢复；
 文件丢失就意味着钱包控制权丢失。
 
-CLI 使用配置的钱包在本地签署一次短期挑战，再保存 Site 返回的 session cookie。Cookie 按 `FINCHIP_API_URL` 隔离并写入仅当前用户可读的 `~/.finchip/credentials.json`；命令输出不会包含 cookie、签名或私钥。
+CLI 登录会创建一个短期 Agent Task，并在临时 `127.0.0.1` 页面中显示官网、钱包、用途和防转发警告；Human 明确确认后才在本地签署版本化挑战。CLI 保存固定七天、钱包绑定且不能合并账号的 session，浏览器通过 60 秒单次 handoff 同步登录。正式 CLI 的钱包及认证流量固定发送到 `https://finchip.ai`，Cookie 写入仅当前用户可读的 `~/.finchip/credentials.json`；命令输出不会包含 cookie、签名、claim/handoff secret 或私钥。`FINCHIP_API_URL` 不是公开配置，正式 executable 检测到它会拒绝运行。
 
 ```bash
 finchip wallet create
@@ -34,6 +34,16 @@ finchip login
 finchip status --json
 finchip logout
 ```
+
+只运行 Human 自己刚在 `finchip.ai` 发起的登录 Task；不要运行别人经聊天、邮件或其他网站转发的指令，即使其中 URL 确实属于官网。CLI 登录不会隐式合并账号；需要关联已有 GitHub 身份时，应登录后在浏览器使用现有账号关联流程。
+
+Site 的 “Login with your Agent” 会给出同一底层 Task 指令。ID 和 claim 必须使用页面实际生成的值：
+
+```text
+finchip task run https://finchip.ai/agent-tasks/{actual-task-id}#claim={actual-claim-secret}
+```
+
+登录或 `site open` 的 localhost listener 只在一次确认期间存在，不是常驻 daemon。
 
 `wallet create` 默认把新钱包写入 `~/.finchip/wallets/agent.key`，使用操作系统的独占创建保证绝不覆盖已有钱包，并把 CLI 自建文件限制为仅当前用户可读。目标已存在时请继续使用原钱包，或显式指定新文件：
 
@@ -78,14 +88,18 @@ CLI 把“准备操作”和“授权花钱/广播”分开。会签署付款或
 finchip skill publish ./my-skill \
   --slug my-skill \
   --name "My Skill" \
-  --description "Agent-ready skill description" \
+  --summary "Explains EVM transactions and flags the main risks; it does not sign or broadcast transactions." \
+  --description "Problem: Raw EVM transaction data is difficult to assess. Outcome: A structured explanation and risk notes. Can: Decode calls and explain likely effects. Not for: Signing, broadcasting, or guaranteeing safety. Requires: Transaction data and chain context. Produces: A human-readable report. Limits: Results depend on supplied data and supported ABIs. Side effects: None. Good matches: Users reviewing a transaction before signing. Not a match: Users asking the Skill to execute the transaction." \
   --category "Dev Environment" \
+  --skill-version "1.0.0" \
   --price 0.01 \
   --chain bsc \
   --yes
 ```
 
-新发布必须显式填写 `--category`，避免未填写的内容被静默归入错误分类。`--license`、`--version`、`--royalty-bps` 和 `--max-supply` 有平台默认值。
+新发布必须显式填写 `--summary`、`--description` 和 `--category`。`--summary` 最多 280 个字符，用于快速说明问题、结果和主要边界。`--description` 是完整的能力适配契约，应说明解决的问题、产出、能做与不能做、所需输入或权限、限制、副作用，以及适合和不适合的需求，便于 Agent 搜索后判断是否匹配。它是发布者声明，不是 FinChip 对能力或安全性的认证。
+
+`--license`、`--skill-version`、`--royalty-bps` 和 `--max-supply` 有平台默认值。Skill 包版本必须使用 `--skill-version`；根命令的 `finchip --version` 只显示 CLI 版本。
 
 CLI 对外统一显示并接受 Site canonical slug，例如 `my-skill-finchip`。现有链上 Registry 的技术 slug 仍是 `my-skill_finchip`；CLI 会在链上查询时自动转换，历史 `_finchip` 输入也继续兼容。Publish JSON 的 `slug` 是 Site canonical slug，`onchainSlug` 用于链上诊断和恢复，不需要用户日常记忆。
 
@@ -107,8 +121,10 @@ CLI 对外统一显示并接受 Site canonical slug，例如 `my-skill-finchip`�
 finchip skill publish ./my-skill \
   --slug my-skill \
   --name "My Skill" \
-  --description "Agent-ready skill description" \
+  --summary "Explains EVM transactions and flags the main risks; it does not sign or broadcast transactions." \
+  --description "Problem: Raw EVM transaction data is difficult to assess. Outcome: A structured explanation and risk notes. Can: Decode calls and explain likely effects. Not for: Signing, broadcasting, or guaranteeing safety. Requires: Transaction data and chain context. Produces: A human-readable report. Limits: Results depend on supplied data and supported ABIs. Side effects: None. Good matches: Users reviewing a transaction before signing. Not a match: Users asking the Skill to execute the transaction." \
   --category "Dev Environment" \
+  --skill-version "1.0.0" \
   --price 0.01 \
   --encrypt oracle-v2 \
   --dry-run --json
@@ -116,7 +132,7 @@ finchip skill publish ./my-skill \
 finchip skill publish --resume my-skill --yes --json
 ```
 
-目录发布要求目标是 Git 仓库，并遵守 `.gitignore`。CLI 还会强制排除常见凭据、私钥、云服务配置、容器/Kubernetes 认证文件和 Terraform state/variables。Dry run JSON 会返回 `sourceFiles`、`excludedSensitiveFiles` 和实际 `encryptionMode`。
+目录发布不再要求 Git。若目标位于 Git 仓库中，CLI 使用 Git 枚举文件并遵守 `.gitignore`；普通目录则使用安全的本地递归收集。两种模式都不会跟随符号链接，并强制排除常见凭据、私钥、云服务配置、容器/Kubernetes 认证文件；普通目录还会跳过 `node_modules`、构建输出和常见缓存目录。Dry run JSON 会返回 `sourceFiles`、带原因的 `excludedFiles`、兼容字段 `excludedSensitiveFiles`、`sourceCollectionMode` 和实际 `encryptionMode`。
 
 发布恢复状态保存在 `~/.finchip/publish-state.json`，权限仅限当前用户。状态会在广播前保存待提交的完整 encryption tuple；因此 Lit 在 `key_prepared` 或 `key_submitted` 后恢复时会复用 ciphertext，不再次发送 CK。旧状态没有模式时按 `finchip` 解释。
 
@@ -137,7 +153,7 @@ finchip download my-skill-finchip \
 
 未指定部署时，CLI 从 Site 获取 canonical chain 和 Chip 地址。指定部署时，`--chain` 与 `--addr` 必须一起使用。下载默认拒绝覆盖已有文件；只有显式使用 `--force` 才会覆盖。
 
-CLI 先使用当前 Site session cookie 请求 source manifest；Site 要求额外钱包证明时，再生成一次 `skill_detail_viewer` 签名。Cookie 钱包与配置的 Agent 钱包不一致会立即停止。授权下载 URL 必须与 `FINCHIP_API_URL` 同源，避免 cookie 或下载 token 被发送给第三方。
+CLI 先使用当前 Site session cookie 请求 source manifest；Site 要求额外钱包证明时，再生成一次 `skill_detail_viewer` 签名。Cookie 钱包与配置的 Agent 钱包不一致会立即停止。授权下载 URL 必须与内置的 `https://finchip.ai` 同源，避免 cookie 或下载 token 被发送给第三方。
 
 支持 Site 当前四种来源：
 
@@ -214,6 +230,17 @@ Site 有可能在找不到指定部署时回退到同 slug 的 canonical deploym
 - `--max-price` 和 `--max-gas-fee` 是可选的 Agent 预算护栏，分别限制链上价格与估算的最大 gas 费用。
 - 已持有时返回 `ACQUIRE_ALREADY_HELD`；只有 `--force --yes` 才会再次购买。
 - 广播后结果不确定时不会自动重发。`ACQUIRE_RESULT_UNKNOWN` 会带 tx hash，并要求先检查 receipt 或 `library`。
+
+从 Site 选择 “Use my local Agent wallet” 后，先运行页面给出的 `finchip task run ...`。它只会生成并保存精确执行计划，状态停在 `awaiting_approval`。Agent 必须向 Human 展示 Skill、钱包、chain、contract、price、最大 gas fee 和 plan hash；Human 明确批准后，才可以用首次命令返回的真实 Task ID 执行 `finchip task resume ... --yes`。
+
+恢复时会重新 preflight；计划变化就生成新 plan 并再次停下。Site 一旦原子记录 `broadcasting`，此后 `task resume` 永远只查询，不会再次调用 `writeContract`。可使用 `task list/show/deny` 检查、恢复或拒绝。Site 最终独立验证 sender、contract、method、value、事件、receipt 与持仓；revert 是不可重试的 `failed`。
+
+已有 CLI session 可以一次性打开 Human 的 Creator 页面：
+
+```bash
+finchip site open --view creator
+finchip site open --view creator --skill audit-pro-finchip
+```
 
 `skill show` 是任何人可用的公开详情；Creator 的完整可编辑状态仍由 `skill manage get` 提供。CLI 不再提供含义模糊的根级 `skill get`。
 

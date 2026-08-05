@@ -9,7 +9,7 @@
 //   • finchip pay          — consumes /api/v1 x402 challenge
 //   • finchip market list  — optionally enriches with DB-side skills.json
 
-const DEFAULT_BASE = process.env.FINCHIP_API_URL || 'https://finchip.ai';
+const DEFAULT_BASE = 'https://finchip.ai';
 
 const TIMEOUT_MS = 8000;
 
