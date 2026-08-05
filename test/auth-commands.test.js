@@ -10,7 +10,7 @@ import { loadOriginCredentials, saveOriginCredentials } from '../src/auth-client
 const PRIVATE_KEY = `0x${'1'.padStart(64, '0')}`;
 const WALLET_ADDR = '0x7e5f4552091a69125d5dfcb7b8c2659029395bdf';
 
-function runCli(args, env) {
+function runCli(args, env, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['bin/finchip.js', ...args], {
       cwd: new URL('..', import.meta.url),
@@ -20,7 +20,17 @@ function runCli(args, env) {
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
-    child.stderr.on('data', chunk => { stderr += chunk; });
+    let confirmationStarted = false;
+    child.stderr.on('data', chunk => {
+      stderr += chunk;
+      if (options.confirmLocal && !confirmationStarted) {
+        const match = stderr.match(/(http:\/\/127\.0\.0\.1:\d+\/confirm\/[A-Za-z0-9_-]+)/);
+        if (match) {
+          confirmationStarted = true;
+          void fetch(match[1], { method: 'POST', redirect: 'manual' }).catch(reject);
+        }
+      }
+    });
     child.on('error', reject);
     child.on('close', code => resolve({ code, stdout, stderr }));
   });
@@ -47,23 +57,27 @@ test('login, status, repeated login, and logout complete the cookie lifecycle', 
       const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
       res.setHeader('Content-Type', 'application/json');
 
-      if (req.url === '/api/auth/wallet/challenge' && req.method === 'POST') {
+      if (req.url === '/api/auth/cli-login/requests' && req.method === 'POST') {
         observedOrigin = req.headers.origin;
-        res.setHeader('Set-Cookie', 'finchip_wallet_challenge=challenge; Max-Age=60; HttpOnly; Path=/');
-        res.end(JSON.stringify({ message: `FinChip test challenge for ${body.wallet_addr}` }));
+        res.setHeader('Set-Cookie', 'finchip_cli_login_pending=pending; Max-Age=600; HttpOnly; Path=/');
+        res.end(JSON.stringify({ taskUrl: `${origin}/agent-tasks/11111111-1111-4111-8111-111111111111#claim=claim-secret`, requestId: '11111111-1111-4111-8111-111111111111' }));
         return;
       }
-      if (req.url === '/api/auth/wallet/login' && req.method === 'POST') {
-        assert.match(req.headers.cookie || '', /finchip_wallet_challenge=challenge/);
+      if (req.url === '/api/auth/cli-login/requests/11111111-1111-4111-8111-111111111111/claim' && req.method === 'POST') {
+        assert.equal(body.walletAddr, WALLET_ADDR);
+        assert.equal(body.cliVersion, '0.5.0');
+        res.end(JSON.stringify({ ok: true, message: 'FinChip test Agent login challenge' }));
+        return;
+      }
+      if (req.url === '/api/auth/cli-login/requests/11111111-1111-4111-8111-111111111111/authorize' && req.method === 'POST') {
         assert.equal(typeof body.signature, 'string');
         assert.ok(body.signature.startsWith('0x'));
         authenticated = true;
         res.setHeader('Set-Cookie', [
-          'finchip_wallet_challenge=; Max-Age=0; HttpOnly; Path=/',
           'finchip_account_session=account-secret; Max-Age=3600; HttpOnly; Path=/',
           'finchip_wallet_session=wallet-secret; Max-Age=3600; HttpOnly; Path=/',
         ]);
-        res.end(JSON.stringify({ ok: true }));
+        res.end(JSON.stringify({ ok: true, userId: 'user-1', walletAddr: WALLET_ADDR, handoffUrl: `${origin}/auth/agent/complete#handoff=browser-secret` }));
         return;
       }
       if (req.url === '/api/auth/session' && req.method === 'GET') {
@@ -76,8 +90,8 @@ test('login, status, repeated login, and logout complete the cookie lifecycle', 
         const loginBody = {
           authenticated: true,
           identity: { userId: 'user-1', username: 'agent_user', walletAddr: body.wallet_addr },
-          account: { userId: 'user-1' },
-          wallet: { walletAddr: WALLET_ADDR },
+          account: { userId: 'user-1', clientKind: 'cli' },
+          wallet: { walletAddr: WALLET_ADDR, clientKind: 'cli' },
           connections: {
             wallet: { walletAddr: WALLET_ADDR, signatureKind: 'eoa', verifiedChainIds: [56] },
             github: null,
@@ -122,12 +136,12 @@ test('login, status, repeated login, and logout complete the cookie lifecycle', 
   };
 
   try {
-    const login = await runCli(['login', '--json'], env);
+    const login = await runCli(['login', '--json'], env, { confirmLocal: true });
     assert.equal(login.code, 0, `${login.stderr}\n${login.stdout}`);
     const loginJson = JSON.parse(login.stdout);
     assert.equal(loginJson.code, 'AUTHENTICATED');
     assert.equal(loginJson.account.walletAddr, WALLET_ADDR);
-    assert.doesNotMatch(login.stdout, /account-secret|wallet-secret|challenge/);
+    assert.doesNotMatch(login.stdout, /account-secret|wallet-secret|claim-secret|browser-secret/);
     assert.equal(observedOrigin, origin);
 
     const status = await runCli(['status', '--json'], env);
@@ -145,7 +159,7 @@ test('login, status, repeated login, and logout complete the cookie lifecycle', 
 
     const afterLogout = await runCli(['status', '--json'], env);
     assert.equal(afterLogout.code, 2);
-    assert.equal(JSON.parse(afterLogout.stdout).code, 'AUTH_REQUIRED');
+    assert.equal(JSON.parse(afterLogout.stdout).code, 'SESSION_REAUTH_REQUIRED');
   } finally {
     await close(server);
   }
@@ -159,8 +173,8 @@ test('logout clears local credentials even when remote revocation fails', async 
       res.end(JSON.stringify({
         authenticated: true,
         identity: { userId: 'user-1', username: 'agent_user' },
-        account: { userId: 'user-1' },
-        wallet: { walletAddr: WALLET_ADDR },
+      account: { userId: 'user-1', clientKind: 'cli' },
+      wallet: { walletAddr: WALLET_ADDR, clientKind: 'cli' },
         connections: { wallet: null, github: null },
       }));
       return;
@@ -201,7 +215,7 @@ test('logout clears local credentials even when remote revocation fails', async 
 
     const status = await runCli(['status', '--json'], env);
     assert.equal(status.code, 2);
-    assert.equal(JSON.parse(status.stdout).code, 'AUTH_REQUIRED');
+    assert.equal(JSON.parse(status.stdout).code, 'SESSION_REAUTH_REQUIRED');
   } finally {
     await close(server);
   }

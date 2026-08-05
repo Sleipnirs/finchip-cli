@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { writePrivateTextFile } from './private-files.js';
+import { FINCHIP_PROD_ORIGIN } from './site-origin.js';
 
 const STORE_VERSION = 1;
 const DEFAULT_CREDENTIALS_PATH = join(homedir(), '.finchip', 'credentials.json');
@@ -11,13 +12,13 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 
 const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-export function normalizeApiOrigin(value = process.env.FINCHIP_API_URL || 'https://finchip.ai') {
+export function normalizeApiOrigin(value = FINCHIP_PROD_ORIGIN) {
   const url = new URL(value);
-  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('FINCHIP_API_URL must use http or https.');
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('FinChip API origin must use http or https.');
   // Session cookies are bearer credentials: never send them over plaintext HTTP
   // except to a local test server.
   if (url.protocol === 'http:' && !LOCALHOST_HOSTNAMES.has(url.hostname)) {
-    throw new Error('FINCHIP_API_URL must use HTTPS; HTTP is only allowed for localhost test servers.');
+    throw new Error('FinChip API origin must use HTTPS; HTTP is only allowed for dependency-injected local tests.');
   }
   return url.origin;
 }

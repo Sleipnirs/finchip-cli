@@ -32,6 +32,8 @@ import { cmdChains }                                        from '../src/command
 import { cmdDoctor }                                        from '../src/commands/doctor.js';
 import { cmdPay }                                           from '../src/commands/pay.js';
 import { cmdLogin, cmdStatus, cmdLogout }                    from '../src/commands/auth.js';
+import { cmdTaskRun, cmdTaskList, cmdTaskShow, cmdTaskResume, cmdTaskDeny } from '../src/commands/task.js';
+import { cmdSiteOpen }                                      from '../src/commands/site.js';
 import {
   cmdWalletCreate,
   cmdWalletMigrate,
@@ -41,9 +43,11 @@ import {
 import { registerSkillCommands }                             from '../src/commands/skill.js';
 import { registerDeprecatedPublishCommands }                 from '../src/commands/deprecated.js';
 import { cmdDownload }                                       from '../src/commands/download.js';
-import { c }                                                from '../src/utils.js';
+import { c, emitFailure }                                   from '../src/utils.js';
+import { assertNoPublicOriginOverride }                     from '../src/site-origin.js';
 
 const program = new Command();
+let activeCommandOptions = {};
 
 program
   .name('finchip')
@@ -68,6 +72,45 @@ program
   .description('Revoke and remove the active FinChip account session')
   .option('--json', 'Emit machine-readable JSON')
   .action(cmdLogout);
+
+const task = program.command('task').description('Run and inspect wallet-bound FinChip Agent Tasks');
+
+task.command('run <task-url>')
+  .description('Claim a login or business Task from an official finchip.ai URL')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdTaskRun);
+
+task.command('list')
+  .description('List wallet-bound Site Tasks and local recovery records')
+  .option('--status <status>', 'Filter Site Tasks by status')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdTaskList);
+
+task.command('show <task-id>')
+  .description('Show the current Site state for a Task')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdTaskShow);
+
+task.command('resume <task-id>')
+  .description('Re-preflight a Task; --yes approves the exact unchanged plan and broadcasts once')
+  .option('--yes', 'Explicitly approve the displayed plan and broadcast')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdTaskResume);
+
+task.command('deny <task-id>')
+  .description('Deny the locally verified execution plan for a Task')
+  .option('--reason <code>', 'Local denial reason code', 'human_denied')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdTaskDeny);
+
+const site = program.command('site').description('Open wallet-bound FinChip Site views');
+
+site.command('open')
+  .description('Open a wallet-bound Site view through a one-time browser handoff')
+  .requiredOption('--view <view>', 'Site view (creator)')
+  .option('--skill <slug>', 'Open a specific Creator Skill')
+  .option('--json', 'Emit machine-readable JSON')
+  .action(cmdSiteOpen);
 
 const wallet = program.command('wallet').description('Create, select, inspect, or migrate a dedicated Agent wallet');
 
@@ -301,4 +344,13 @@ ${c.gray}A2A docs:${c.reset} https://finchip.ai/a2aentry
 ${c.gray}npm:${c.reset}      https://www.npmjs.com/package/finchip-cli
 `);
 
-program.parse();
+program.hook('preAction', (_rootCommand, actionCommand) => {
+  activeCommandOptions = actionCommand.opts();
+  assertNoPublicOriginOverride(process.env);
+});
+
+try {
+  await program.parseAsync();
+} catch (error) {
+  emitFailure(activeCommandOptions, error);
+}
