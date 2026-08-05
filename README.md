@@ -19,6 +19,19 @@ finchip --help
 npx finchip-cli@latest --help
 ```
 
+## 版本更新提醒
+
+CLI 0.5.2 起从 `https://finchip.ai/api/cli/version-policy` 读取官方最低/推荐版本策略。成功结果在 `~/.finchip/version-policy.json` 缓存 24 小时，失败检查缓存 1 小时；刷新最多等待 1.2 秒、不携带 Cookie、拒绝跨站 redirect，并且失败不会阻断原命令。
+
+一旦已缓存的策略表明版本落后，之后每条实际命令都会提醒：普通输出写到 stderr；`--json` 输出增加结构化 `warnings[]`，stdout 仍保持单行合法 JSON。`CLI_UPDATE_AVAILABLE` 表示建议尽快升级，`CLI_UPDATE_REQUIRED` 表示低于 Site 通用安全/兼容底线；具体登录或交易 API 仍可能用 `CLIENT_VERSION_UNSUPPORTED` 拒绝不兼容版本。
+
+```bash
+npm install --global finchip-cli@latest
+finchip --version
+```
+
+版本提醒不会自动安装或执行 Site 下发代码，也不会让离线钱包检查依赖 Site 在线。`--help` 和 `--version` 在命令 action 之前完成，因此不承诺显示提醒。
+
 ## 登录与钱包
 
 钱包 key file 是一个**未加密的明文私钥文件**，不是密码保险箱。请只为 Agent
@@ -42,6 +55,8 @@ Site 的 “Login with your Agent” 会给出同一底层 Task 指令。ID 和 
 ```text
 finchip task run https://finchip.ai/agent-tasks/{actual-task-id}#claim={actual-claim-secret}
 ```
+
+这段复制流程只用于登录。完成 Agent CLI 登录后，Site 上的购买请求会进入同一账号与钱包绑定的 Task Inbox，不再显示或复制业务 Task secret。
 
 登录或 `site open` 的 localhost listener 只在一次确认期间存在，不是常驻 daemon。
 
@@ -231,7 +246,7 @@ Site 有可能在找不到指定部署时回退到同 slug 的 canonical deploym
 - 已持有时返回 `ACQUIRE_ALREADY_HELD`；只有 `--force --yes` 才会再次购买。
 - 广播后结果不确定时不会自动重发。`ACQUIRE_RESULT_UNKNOWN` 会带 tx hash，并要求先检查 receipt 或 `library`。
 
-从 Site 选择 “Use my local Agent wallet” 后，先运行页面给出的 `finchip task run ...`。它只会生成并保存精确执行计划，状态停在 `awaiting_approval`。Agent 必须向 Human 展示 Skill、钱包、chain、contract、price、最大 gas fee 和 plan hash；Human 明确批准后，才可以用首次命令返回的真实 Task ID 执行 `finchip task resume ... --yes`。
+已使用 Agent CLI 登录的 Human 在 Site 点击 “Send to my Agent” 后，购买请求会进入钱包绑定的 Task Inbox。Agent 先运行 `finchip task list --status pending --json`；如果有多条，必须让 Human 确认具体 Task ID，不得默认选最新一条。随后运行 `finchip task claim <task-id> --json`，它只会生成并保存精确执行计划，状态停在 `awaiting_approval`。Agent 必须向 Human 展示 Skill、钱包、chain、contract、price、最大 gas fee 和 plan hash；Human 明确批准后，才可以执行 `finchip task resume <task-id> --yes`。
 
 恢复时会重新 preflight；计划变化就生成新 plan 并再次停下。Site 一旦原子记录 `broadcasting`，此后 `task resume` 永远只查询，不会再次调用 `writeContract`。可使用 `task list/show/deny` 检查、恢复或拒绝。Site 最终独立验证 sender、contract、method、value、事件、receipt 与持仓；revert 是不可重试的 `failed`。
 
