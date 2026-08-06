@@ -41,7 +41,10 @@ async function prepareAcquire(intent, dependencies = {}) {
 
 async function executeAcquire(context) {
   return executeAcquireWithWriteContract(context.prepared, {
-    onTxHash: context.onTxHash,
+    // The legacy acquire hook passes (txHash, preview). Agent Tasks have one
+    // chain step and their second argument is a numeric step index, so keep
+    // that internal preview object out of the Task callback contract.
+    onTxHash: txHash => context.onTxHash?.(txHash),
   });
 }
 
