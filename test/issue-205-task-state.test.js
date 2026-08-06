@@ -187,6 +187,65 @@ test('acquire Task preflight passes the claimed chain and contract address toget
   );
 });
 
+test('acquire Task reports a broadcast hash for its single chain step', async () => {
+  const txHash = `0x${'6'.repeat(64)}`;
+  const callbackCalls = [];
+  const walletAddr = '0x1111111111111111111111111111111111111111';
+  const prepared = {
+    dependencies: {
+      walletClientFactory() {
+        return {
+          client: {
+            async writeContract() {
+              return txHash;
+            },
+          },
+        };
+      },
+      loadConfig() {
+        return { rpc: {} };
+      },
+    },
+    deployment: {
+      chain: { id: 56 },
+      contractAddr: '0x2222222222222222222222222222222222222222',
+    },
+    account: { address: walletAddr },
+    privateKey: 'unused-by-injected-wallet-client',
+    publicClient: {
+      async waitForTransactionReceipt() {
+        return { status: 'success', blockNumber: 123n };
+      },
+      async readContract() {
+        return 1n;
+      },
+    },
+    preview: {
+      wallet: walletAddr,
+      slug: 'example-finchip',
+      chainId: 56,
+      contractAddr: '0x2222222222222222222222222222222222222222',
+      estimatedGas: '100',
+    },
+    simulatedRequest: {},
+    heldBefore: 0n,
+    plan: {
+      abi: [],
+      balanceArgs: address => [address],
+    },
+  };
+
+  const result = await actionIntentHandler('skill.acquire.v1').execute({
+    prepared,
+    onTxHash(...args) {
+      callbackCalls.push(args);
+    },
+  });
+
+  assert.deepEqual(callbackCalls, [[txHash]]);
+  assert.equal(result.txHash, txHash);
+});
+
 test('a later Site-step failure never borrows an earlier transaction hash', () => {
   const txHash = `0x${'4'.repeat(64)}`;
   const siteFailure = Object.assign(new Error('sync failed'), { code: 'PRICE_SYNC_FAILED', details: { txHash } });

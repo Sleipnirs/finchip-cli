@@ -521,6 +521,8 @@ Remove-Item -LiteralPath $verifyDir -Recurse
 
 0.6.0 将 Site 发布的最低支持版本从 0.5.0 提升为 0.6.0。0.5.x 会在每条 CLI 命令上收到 `CLI_UPDATE_REQUIRED`，新的 CLI 登录和 Action Intent 领取也会被 Site 拒绝；版本提醒本身不会统一终止仍可在本地执行或已登录的其他命令。
 
+0.6.1 修复 Agent Task Acquire 在交易广播后记录交易哈希时把内部预演对象误作链上步骤编号的问题。0.6.0 不应领取或恢复 Acquire Action Intent；必须先升级到 0.6.1 或更高的兼容版本。
+
 ## Links
 
 - Site: https://finchip.ai
