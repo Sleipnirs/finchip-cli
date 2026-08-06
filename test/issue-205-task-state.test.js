@@ -50,7 +50,7 @@ test('Action Intent commands require an Agent-mode CLI session for the selected 
   );
 });
 
-test('Action Intent compatibility enforces the Site minor-version floor and full action registry', async () => {
+test('Action Intent compatibility enforces the Site floor within the supported major and full action registry', async () => {
   const compatibleConfig = {
     schemaHash: ACTION_INTENT_SCHEMA_HASH,
     supportedActions: [...SUPPORTED_ACTION_INTENT_KINDS],
@@ -67,10 +67,14 @@ test('Action Intent compatibility enforces the Site minor-version floor and full
     error => error.code === 'CLIENT_VERSION_UNSUPPORTED',
   );
 
-  const unverifiedMinor = new ActionIntentClient({ cliVersion: '0.7.0' });
-  unverifiedMinor.config = async () => compatibleConfig;
+  const newerMinor = new ActionIntentClient({ cliVersion: '0.7.0' });
+  newerMinor.config = async () => compatibleConfig;
+  assert.equal((await newerMinor.assertCompatible()).minimumCliVersion, '0.6.0');
+
+  const unsupportedMajor = new ActionIntentClient({ cliVersion: '1.0.0' });
+  unsupportedMajor.config = async () => compatibleConfig;
   await assert.rejects(
-    unverifiedMinor.assertCompatible(),
+    unsupportedMajor.assertCompatible(),
     error => error.code === 'CLIENT_VERSION_UNSUPPORTED',
   );
 });
