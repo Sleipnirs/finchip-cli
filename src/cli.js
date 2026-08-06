@@ -78,6 +78,7 @@ const task = program.command('task').description('Run and inspect wallet-bound F
 
 task.command('run <task-url>')
   .description('Claim a login or business Task from an official finchip.ai URL')
+  .option('--source <path>', 'Local source path for a publish Task')
   .option('--json', 'Emit machine-readable JSON')
   .action(cmdTaskRun);
 
@@ -89,6 +90,7 @@ task.command('list')
 
 task.command('claim <task-id>')
   .description('Claim one exact pending wallet-bound Site Task and prepare its dry-run plan')
+  .option('--source <path>', 'Local source path for a publish Task')
   .option('--json', 'Emit machine-readable JSON')
   .action(cmdTaskClaim);
 
@@ -99,6 +101,7 @@ task.command('show <task-id>')
 
 task.command('resume <task-id>')
   .description('Re-preflight a Task; --yes approves the exact unchanged plan and broadcasts once')
+  .option('--source <path>', 'Local source path for a publish Task (remembered after preflight)')
   .option('--yes', 'Explicitly approve the displayed plan and broadcast')
   .option('--json', 'Emit machine-readable JSON')
   .action(cmdTaskResume);

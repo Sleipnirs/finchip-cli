@@ -271,7 +271,7 @@ async function verifySavedEncryption(publicClient, state) {
   for (const warning of verification.warnings) wrn(warning);
 }
 
-async function finishPublish(state, context, contentKey) {
+async function finishPublish(state, context, contentKey, hooks = {}) {
   const { client, privateKey, account, cfg } = context;
   const chain = resolveChain(state.chainId);
   const publicClient = getPublicClient(chain.id, cfg.rpc);
@@ -311,6 +311,7 @@ async function finishPublish(state, context, contentKey) {
       state.contractAddr = deployment.contractAddr;
       state.registerPayload = { ...state.registerBase, contract_addr: state.contractAddr };
       save('deployed');
+      await hooks.onStepComplete?.(2, { txHash: state.deployTxHash, resultSummary: { contractAddr: state.contractAddr } });
     }
 
     if (state.stage === 'deployed') {
@@ -329,6 +330,7 @@ async function finishPublish(state, context, contentKey) {
       }
       state.skillId = payload.skill_id || state.skillId || null;
       save('registered');
+      await hooks.onStepComplete?.(3, { resultSummary: { skillId: state.skillId, contractAddr: state.contractAddr } });
     }
 
     if (state.setLitTxHash && !stageAtLeast(state.stage, 'key_submitted')) {
@@ -361,6 +363,7 @@ async function finishPublish(state, context, contentKey) {
       state.marker = prepared.marker;
       state.diagnosticChainTag = prepared.chainTag;
       save('key_prepared');
+      await hooks.onStepComplete?.(4, { resultSummary: { envelopeScheme: state.envelopeScheme, marker: state.marker } });
     }
 
     if (state.stage === 'key_prepared') {
@@ -376,6 +379,7 @@ async function finishPublish(state, context, contentKey) {
           ],
         });
         save('key_submitted');
+        await hooks.onTxHash?.(state.setLitTxHash, 5);
       } catch (error) {
         throw new PublishError(
           'KEY_SETUP_FAILED',
@@ -422,6 +426,7 @@ async function finishPublish(state, context, contentKey) {
       keyVerifiedThisRun = true;
       delete state.sealedContentKey;
       save('key_set');
+      await hooks.onStepComplete?.(5, { txHash: state.setLitTxHash });
     }
 
     if (resumeNeedsOnChainVerification(state, keyVerifiedThisRun)) {
@@ -435,6 +440,7 @@ async function finishPublish(state, context, contentKey) {
     if (!response.ok || payload.ok !== true || payload.market_eligible !== true) {
       throw new PublishError('FINALIZE_FAILED', payload.error || payload.code || 'Market finalize failed.', 5, 'finalize');
     }
+    await hooks.onStepComplete?.(6, { resultSummary: { marketEligible: true } });
     await apiJson(client, '/api/points', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -485,7 +491,7 @@ async function resumePublish(slug, options) {
   return finishPublish(state, context, contentKey);
 }
 
-async function newPublish(pathArg, options, validated) {
+async function newPublish(pathArg, options, validated, hooks = {}) {
   const context = await authenticatedContext();
   const { client, cfg, privateKey, account } = context;
   const chain = resolveChain(options.chain || cfg.chain);
@@ -558,7 +564,15 @@ async function newPublish(pathArg, options, validated) {
     };
   }
 
-  const uploaded = [];
+  await hooks.onStepComplete?.(0, {
+    resultSummary: {
+      primary: primary.relative,
+      sourceFiles: source.files.map(file => file.relative),
+      excludedFiles: source.excludedFiles,
+    },
+  });
+
+  const uploaded = options.coverUploadId ? [String(options.coverUploadId)] : [];
   let broadcast = false;
   try {
     const primaryPin = await uploadFile(client, encryptedPrimary, `${basename(primary.relative)}.enc`, 'package');
@@ -591,6 +605,15 @@ async function newPublish(pathArg, options, validated) {
       license: options.license, version: options.skillVersion, deploymentSlug: validated.slug, imageURI,
     });
     uploaded.push(metadataPin.uploadId);
+    await hooks.onStepComplete?.(1, {
+      resultSummary: {
+        uploadIds: uploaded,
+        metadataUri: metadataPin.uri,
+        sourceUri: manifestPin.uri,
+        contentHash: manifest.contentHash,
+        imageUri: imageURI,
+      },
+    });
 
     const args = [
       options.name.trim(), validated.slug, metadataPin.uri, manifest.contentHash, manifestPin.uri,
@@ -600,6 +623,7 @@ async function newPublish(pathArg, options, validated) {
       address: proto.factory, abi: FACTORY_ABI, functionName: 'deployChip', args,
     });
     broadcast = true;
+    await hooks.onTxHash?.(deployTxHash, 2);
     const registerBase = {
       tx_hash: deployTxHash, chain_id: chain.id,
       name: options.name.trim(), slug: validated.slug, creator_addr: account.address.toLowerCase(), category: options.category,
@@ -627,7 +651,7 @@ async function newPublish(pathArg, options, validated) {
     };
     savePublishState(client.origin, validated.slug, state);
     await updateUploads(client, '/api/skills/me/ipfs/finalize', { uploadIds: uploaded, status: 'tx_submitted', txHash: deployTxHash });
-    return finishPublish(state, context, contentKey);
+    return finishPublish(state, context, contentKey, hooks);
   } catch (error) {
     if (!broadcast && uploaded.length) {
       await updateUploads(client, '/api/skills/me/ipfs/cleanup', { uploadIds: uploaded }).catch(() => {});
@@ -642,6 +666,63 @@ async function newPublish(pathArg, options, validated) {
     }
     throw error;
   }
+}
+
+function taskPublishOptions(draft, mode) {
+  const payload = draft?.payload;
+  if (!payload || typeof payload !== 'object') throw new PublishError('PUBLISH_DRAFT_INVALID', 'The Site publish draft is invalid.', 3, 'validation');
+  if (payload.sourceRequirement !== 'local_path_at_cli') {
+    throw new PublishError('PUBLISH_DRAFT_INVALID', 'The publish draft has an unsupported source policy.', 3, 'validation');
+  }
+  return {
+    name: payload.name,
+    slug: payload.slug,
+    summary: payload.summary,
+    description: payload.description,
+    category: payload.category,
+    tags: Array.isArray(payload.tags) ? payload.tags.join(',') : '',
+    license: payload.license,
+    skillVersion: payload.version,
+    encrypt: payload.encryptionMode,
+    cover: payload.imageURI || undefined,
+    coverUploadId: payload.coverUploadId || undefined,
+    chain: String(payload.chainId),
+    price: String(BigInt(payload.priceWei)) === '0' ? '0' : formatEther(BigInt(payload.priceWei)),
+    royaltyBps: String(payload.royaltyBps),
+    maxSupply: String(payload.maxSupply),
+    json: true,
+    dryRun: mode === 'prepare',
+    yes: mode === 'execute',
+  };
+}
+
+function requireTaskSourcePath(sourcePath, draft) {
+  const normalized = String(sourcePath || '').trim();
+  if (normalized) return normalized;
+  const githubUrl = draft?.payload?.sourceHint?.kind === 'github' ? draft.payload.sourceHint.url : null;
+  throw new PublishError(
+    'PUBLISH_SOURCE_REQUIRED',
+    githubUrl
+      ? `A local source path is required. Clone or inspect ${githubUrl}, then pass --source <path>.`
+      : 'A local source file or Git directory is required. Pass --source <path>.',
+    3,
+    'validation',
+    { sourceHint: githubUrl, confirmationRequired: true },
+  );
+}
+
+export async function preparePublishTask(sourcePath, draft) {
+  const pathArg = requireTaskSourcePath(sourcePath, draft);
+  const options = taskPublishOptions(draft, 'prepare');
+  const validated = validateOptions(pathArg, options);
+  return newPublish(pathArg, options, validated);
+}
+
+export async function executePublishTask(sourcePath, draft, hooks = {}) {
+  const pathArg = requireTaskSourcePath(sourcePath, draft);
+  const options = taskPublishOptions(draft, 'execute');
+  const validated = validateOptions(pathArg, options);
+  return newPublish(pathArg, options, validated, hooks);
 }
 
 export async function cmdPublish(pathArg, options = {}) {

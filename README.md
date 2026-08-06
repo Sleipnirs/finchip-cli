@@ -21,7 +21,7 @@ npx finchip-cli@latest --help
 
 ## 版本更新提醒
 
-CLI 0.5.2 起从 `https://finchip.ai/api/cli/version-policy` 读取官方最低/推荐版本策略。成功结果在 `~/.finchip/version-policy.json` 缓存 24 小时，失败检查缓存 1 小时；刷新最多等待 1.2 秒、不携带 Cookie、拒绝跨站 redirect，并且失败不会阻断原命令。
+CLI 0.5.2 起从 `https://finchip.ai/api/cli/version-policy` 读取官方最低/推荐版本策略。0.6.0 起，浏览器 Agent Task Inbox 覆盖 FinChip 核心市场动作，并继续以 dry-run、精确计划哈希和显式 `task resume --yes` 为签名边界。成功的版本策略结果在 `~/.finchip/version-policy.json` 缓存 24 小时，失败检查缓存 1 小时；刷新最多等待 1.2 秒、不携带 Cookie、拒绝跨站 redirect，并且失败不会阻断原命令。
 
 一旦已缓存的策略表明版本落后，之后每条实际命令都会提醒：普通输出写到 stderr；`--json` 输出增加结构化 `warnings[]`，stdout 仍保持单行合法 JSON。`CLI_UPDATE_AVAILABLE` 表示建议尽快升级，`CLI_UPDATE_REQUIRED` 表示低于 Site 通用安全/兼容底线；具体登录或交易 API 仍可能用 `CLIENT_VERSION_UNSUPPORTED` 拒绝不兼容版本。
 
@@ -488,6 +488,38 @@ git diff --check
 GitHub CI 覆盖 Node 22、24、26，以及 Linux、Windows、Windows Git Bash、Apple Silicon macOS 和 Intel macOS。Node 20 只运行不支持版本的启动守卫测试。
 
 本地和 CI 测试不会默认执行真实 Site 发布、Oracle grant、下载或链上写入。
+
+## 维护者发布流程
+
+发布 CLI 0.6.0 及后续版本时，必须使用固定的 `npm@11.6.2`。不要给 `npm publish` 添加 `--ignore-scripts`：默认的 `prepublishOnly` 会运行真实 tarball 校验，但生命周期脚本可以被该参数绕过。npm 12 当前会从发布 tarball 中遗漏 `npm-shrinkwrap.json`，因此不能用于发布。
+
+```powershell
+npx --yes npm@11.6.2 whoami
+npx --yes npm@11.6.2 run check:package
+npx --yes npm@11.6.2 publish
+```
+
+发布完成后，必须按 `package.json` 中的精确版本从 registry 重新下载 tarball，并确认其中包含 `npm-shrinkwrap.json`。不要用本地 `npm pack` 的结果或 `latest` 标签代替这一步。
+
+```powershell
+$releaseVersion = node -p "require('./package.json').version"
+$verifyDir = Join-Path ([System.IO.Path]::GetTempPath()) ("finchip-cli-registry-" + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $verifyDir | Out-Null
+npx --yes npm@11.6.2 pack "finchip-cli@$releaseVersion" --pack-destination $verifyDir
+$registryTarballs = @(Get-ChildItem -LiteralPath $verifyDir -Filter '*.tgz')
+if ($registryTarballs.Count -ne 1) {
+  throw "Expected one registry tarball, found $($registryTarballs.Count)."
+}
+$registryTarball = $registryTarballs[0]
+$registryEntries = tar -tf $registryTarball.FullName
+if ($registryEntries -notcontains 'package/npm-shrinkwrap.json') {
+  throw 'Published registry tarball is missing package/npm-shrinkwrap.json.'
+}
+Write-Host "Verified finchip-cli@$releaseVersion registry tarball includes npm-shrinkwrap.json."
+Remove-Item -LiteralPath $verifyDir -Recurse
+```
+
+0.6.0 将 Site 发布的最低支持版本从 0.5.0 提升为 0.6.0。0.5.x 会在每条 CLI 命令上收到 `CLI_UPDATE_REQUIRED`，新的 CLI 登录和 Action Intent 领取也会被 Site 拒绝；版本提醒本身不会统一终止仍可在本地执行或已登录的其他命令。
 
 ## Links
 

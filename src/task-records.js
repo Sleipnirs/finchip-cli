@@ -24,10 +24,12 @@ export function saveTaskRecord(record, options = {}) {
     broadcastAttemptId: record.broadcastAttemptId ?? null,
     broadcastAttempted: Boolean(record.broadcastAttempted),
     txHash: record.txHash ?? null,
+    localSourcePath: record.localSourcePath ?? null,
+    stepAttempts: Array.isArray(record.stepAttempts) ? record.stepAttempts : [],
     updatedAt: new Date(options.now ?? Date.now()).toISOString(),
   };
   const serialized = JSON.stringify(safe);
-  if (/claimSecret|cookie|signature|privateKey|calldata|rawTransaction/i.test(serialized)) throw new Error('Task execution record contains forbidden material.');
+  if (/"(?:claimSecret|cookie|signature|privateKey|calldata|rawTransaction)"\s*:/i.test(serialized)) throw new Error('Task execution record contains forbidden material.');
   writePrivateTextFile(taskRecordPath(record.taskId, options.directory), `${JSON.stringify(safe, null, 2)}\n`);
   return safe;
 }

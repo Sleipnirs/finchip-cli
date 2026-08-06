@@ -1,6 +1,6 @@
 {
   "name": "finchip-cli",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "FinChip Protocol CLI — A2A-native client for acquiring, launching, and trading on-chain AI skill tokens across 5 EVM chains",
   "type": "module",
   "bin": {
@@ -11,7 +11,8 @@
     "test": "node --import ./test/support/local-origin-preload.mjs --test",
     "check:syntax": "node scripts/check-syntax.mjs",
     "check:package": "node scripts/check-package.mjs",
-    "check:node20-guard": "node scripts/check-node20-guard.mjs"
+    "check:node20-guard": "node scripts/check-node20-guard.mjs",
+    "prepublishOnly": "node scripts/check-package.mjs"
   },
   "dependencies": {
     "commander": "^14.0.3",

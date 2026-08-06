@@ -67,6 +67,7 @@ export async function requestSourceManifest({
   deployment,
   account,
   now = Date.now,
+  allowSignedFallback = true,
 }) {
   const lookupSlug = siteLookupSlug(slug);
   const path = `/api/v2/skills/${encodeURIComponent(lookupSlug)}/source/manifest`;
@@ -84,6 +85,13 @@ export async function requestSourceManifest({
   }
   if (first.response.ok) return validateSourceManifest(first.payload);
   if (first.response.status !== 401) throw sourceError(first.response, first.payload);
+  if (!allowSignedFallback) {
+    throw new DownloadError(
+      'DOWNLOAD_SESSION_REQUIRED',
+      'The CLI session cannot reveal this source manifest without a wallet signature. Re-authenticate with `finchip login`; dry-run never signs.',
+      2,
+    );
+  }
   if (!account) {
     throw new DownloadError('AUTH_REQUIRED', 'Run `finchip login` or configure an Agent wallet to prove wallet ownership.', 2);
   }
