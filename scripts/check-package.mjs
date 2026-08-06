@@ -29,7 +29,9 @@ try {
   requireSuccess(pack, 'npm pack');
 
   const packResult = JSON.parse(pack.stdout);
-  const packageInfo = packResult[0];
+  const packageInfo = Array.isArray(packResult)
+    ? packResult[0]
+    : Object.values(packResult)[0];
   if (!packageInfo?.filename || !Array.isArray(packageInfo.files)) {
     throw new Error('npm pack returned a malformed JSON manifest.');
   }

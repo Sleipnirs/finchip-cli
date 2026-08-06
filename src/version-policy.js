@@ -33,7 +33,7 @@ export function compareCliVersions(left, right) {
 export function isCliVersionSupported(version, minimumVersion) {
   const current = parseCliVersion(version);
   const minimum = parseCliVersion(minimumVersion);
-  if (!current || !minimum || current[0] !== minimum[0] || current[1] !== minimum[1]) return false;
+  if (!current || !minimum || current[0] !== minimum[0]) return false;
   const comparison = compareCliVersions(version, minimumVersion);
   return comparison !== null && comparison >= 0;
 }

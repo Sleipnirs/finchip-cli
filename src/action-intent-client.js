@@ -1,5 +1,5 @@
 import { FinchipAuthClient, FinchipAuthError } from './auth-client.js';
-import { ACTION_INTENT_SCHEMA_HASH } from './action-intent-contracts.js';
+import { ACTION_INTENT_SCHEMA_HASH, SUPPORTED_ACTION_INTENT_KINDS } from './action-intent-contracts.js';
 import { isCliVersionSupported } from './version-policy.js';
 
 function errorFor(response, payload) {
@@ -58,10 +58,24 @@ export class ActionIntentClient {
   resultUnknown(id, txHash = null) { return this.json(`/api/action-intents/${id}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ result: 'result_unknown', txHash }) }); }
   recheck(id) { return this.json(`/api/action-intents/${id}/recheck`, { method: 'POST' }); }
   deny(id, planHash, reasonCode) { return this.decide(id, 'deny', planHash, reasonCode); }
+  beginStep(id, stepIndex, planHash, attemptId) {
+    return this.json(`/api/action-intents/${id}/steps/${stepIndex}/attempt`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planHash, attemptId }),
+    });
+  }
+  recordStepResult(id, stepIndex, attemptId, result) {
+    return this.json(`/api/action-intents/${id}/steps/${stepIndex}/result`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attemptId, ...result }),
+    });
+  }
 
   async assertCompatible() {
     const config = await this.config();
-    if (config.schemaHash !== ACTION_INTENT_SCHEMA_HASH || !config.supportedActions?.includes('skill.acquire.v1') || !isCliVersionSupported(this.cliVersion, config.minimumCliVersion)) {
+    const actionsMatch = Array.isArray(config.supportedActions)
+      && SUPPORTED_ACTION_INTENT_KINDS.every(kind => config.supportedActions.includes(kind));
+    if (config.schemaHash !== ACTION_INTENT_SCHEMA_HASH || !actionsMatch || !isCliVersionSupported(this.cliVersion, config.minimumCliVersion)) {
       throw new FinchipAuthError('CLIENT_VERSION_UNSUPPORTED', 'Site Action Intent contract is not compatible with this CLI.', 3);
     }
     return config;
