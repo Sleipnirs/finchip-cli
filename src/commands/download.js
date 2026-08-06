@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { privateKeyToAccount } from 'viem/accounts';
+import { Unzip } from 'fflate';
 
 import { FinchipAuthClient } from '../auth-client.js';
 import { resolveChain } from '../chains.js';
@@ -92,11 +93,58 @@ async function validateActiveSession(client, account) {
   return session;
 }
 
+export async function prepareDownloadSkill(slug, options = {}, deps = {}) {
+  const requested = validateOptions(options);
+  const cfg = deps.cfg || loadConfig();
+  const privateKey = deps.privateKey === undefined
+    ? resolveWalletPrivateKey(cfg, { required: false })
+    : deps.privateKey;
+  const account = deps.account || (privateKey ? privateKeyToAccount(privateKey) : null);
+  const client = deps.client || new FinchipAuthClient();
+  await validateActiveSession(client, account);
+  const deployment = await resolveDeployment(client, slug, requested);
+  const manifest = await (deps.requestSourceManifest || requestSourceManifest)({
+    client,
+    slug: deployment.slug,
+    deployment,
+    account,
+    allowSignedFallback: false,
+  });
+  return {
+    cfg,
+    client,
+    account,
+    deployment,
+    manifest,
+    files: manifest.files.map(file => ({
+      name: String(file.name),
+      artifactRole: String(file.artifactRole || 'file'),
+      encrypted: file.encrypted === true,
+      downloadable: file.downloadable !== false,
+    })),
+  };
+}
+
 function selectedManifestFile(manifest) {
   return manifest.files.find(file => file.artifactRole === 'bundleZip')
     || manifest.files.find(file => file.artifactRole === 'primary')
     || manifest.files.find(file => file.downloadable !== false)
     || manifest.files[0];
+}
+
+function listZipEntries(bytes) {
+  if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) return [];
+  try {
+    const names = [];
+    const unzip = new Unzip(file => { names.push(file.name); });
+    unzip.push(new Uint8Array(bytes), true);
+    return names
+      .map(name => String(name).replace(/\\/g, '/'))
+      .filter(name => name && !name.startsWith('/') && !name.split('/').includes('..'))
+      .sort();
+  } catch {
+    return [];
+  }
 }
 
 async function verifiedManifestArtifact({ manifest, publicClient, deployment, fetchIpfs }) {
@@ -239,6 +287,7 @@ async function processManifest({
     throw new DownloadError('OUTPUT_WRITE_FAILED', error?.message || 'Could not save the downloaded package.', 5, { outputPath });
   }
   const outputSha256 = sha256Hex(outputBytes);
+  const packageEntries = listZipEntries(outputBytes);
   return {
     ok: true,
     code: 'DOWNLOAD_COMPLETE',
@@ -252,6 +301,7 @@ async function processManifest({
     integrityLevel,
     verifiedPlaintextSha256,
     outputSha256,
+    packageEntries,
     provenanceInjected,
     provenanceId,
     outputDiffersFromVerifiedPlaintext: Boolean(
@@ -272,8 +322,8 @@ export async function downloadSkill(slug, options = {}, deps = {}) {
   await validateActiveSession(client, account);
   const deployment = await resolveDeployment(client, slug, requested);
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const manifest = await (deps.requestSourceManifest || requestSourceManifest)({
+  for (let attempt = 0; attempt < (deps.preparedManifest ? 1 : 2); attempt += 1) {
+    const manifest = deps.preparedManifest || await (deps.requestSourceManifest || requestSourceManifest)({
       client,
       slug: deployment.slug,
       deployment,

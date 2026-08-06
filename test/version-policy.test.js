@@ -30,8 +30,12 @@ test('CLI version comparison is numeric and rejects malformed versions', () => {
   assert.equal(compareCliVersions('0.5.10', '0.5.3'), 1);
   assert.equal(compareCliVersions('0.5.1', '0.5.2'), -1);
   assert.equal(compareCliVersions('not-semver', '0.5.2'), null);
-  assert.equal(isCliVersionSupported('0.5.10', '0.5.2'), true);
-  assert.equal(isCliVersionSupported('0.6.0', '0.5.2'), false);
+  assert.equal(isCliVersionSupported('0.6.0', '0.5.2'), true);
+  assert.equal(isCliVersionSupported('0.7.0', '0.6.0'), true);
+  assert.equal(isCliVersionSupported('0.5.1', '0.5.2'), false);
+  assert.equal(isCliVersionSupported('0.6.0', '0.6.0'), true);
+  assert.equal(isCliVersionSupported('1.0.0', '0.6.0'), false);
+  assert.equal(isCliVersionSupported('abc', '0.6.0'), false);
 });
 
 test('fresh cached policy produces a required update warning without network access', async () => {
@@ -123,7 +127,7 @@ test('cached update policy warns on every command without corrupting JSON stdout
   writeFileSync(join(configDirectory, 'version-policy.json'), JSON.stringify({
     schemaVersion: 1,
     fetchedAt: new Date().toISOString(),
-    policy: { ...policy, minimumSupportedVersion: '0.5.3', recommendedVersion: '0.5.3' },
+    policy: { ...policy, minimumSupportedVersion: '0.6.1', recommendedVersion: '0.6.1' },
   }));
   const env = { ...process.env, HOME: home, USERPROFILE: home };
   delete env.FINCHIP_API_URL;
@@ -141,5 +145,5 @@ test('cached update policy warns on every command without corrupting JSON stdout
     cwd: process.cwd(), env, encoding: 'utf8',
   });
   assert.equal(textResult.status, 2, `${textResult.stderr}\n${textResult.stdout}`);
-  assert.match(textResult.stderr, /\[FinChip\] Update required: installed 0\.5\.2; recommended 0\.5\.3/);
+  assert.match(textResult.stderr, /\[FinChip\] Update required: installed 0\.6\.0; recommended 0\.6\.1/);
 });

@@ -5,9 +5,10 @@ import {
   classifyResumeAction,
   validateTaskApproval,
 } from '../src/task-state.js';
-import { ACTION_INTENT_SCHEMA_HASH, buildAcquireExecutionPlan } from '../src/action-intent-contracts.js';
+import { ACTION_INTENT_SCHEMA_HASH, SUPPORTED_ACTION_INTENT_KINDS, buildAcquireExecutionPlan } from '../src/action-intent-contracts.js';
 import { ActionIntentClient } from '../src/action-intent-client.js';
-import { authorizeBroadcastAttempt, refreshQueryOnlyTask } from '../src/commands/task.js';
+import { actionIntentHandler } from '../src/action-intent-handlers.js';
+import { authorizeBroadcastAttempt, classifyStepFailure, refreshQueryOnlyTask } from '../src/commands/task.js';
 
 test('wallet-bound Inbox claim omits copied secrets and keeps the exact Task id', async () => {
   const calls = [];
@@ -49,27 +50,31 @@ test('Action Intent commands require an Agent-mode CLI session for the selected 
   );
 });
 
-test('Action Intent compatibility enforces the Site patch-version floor', async () => {
+test('Action Intent compatibility enforces the Site floor within the supported major and full action registry', async () => {
   const compatibleConfig = {
     schemaHash: ACTION_INTENT_SCHEMA_HASH,
-    supportedActions: ['skill.acquire.v1'],
-    minimumCliVersion: '0.5.2',
+    supportedActions: [...SUPPORTED_ACTION_INTENT_KINDS],
+    minimumCliVersion: '0.6.0',
   };
-  const compatible = new ActionIntentClient({ cliVersion: '0.5.2' });
+  const compatible = new ActionIntentClient({ cliVersion: '0.6.0' });
   compatible.config = async () => compatibleConfig;
-  assert.equal((await compatible.assertCompatible()).minimumCliVersion, '0.5.2');
+  assert.equal((await compatible.assertCompatible()).minimumCliVersion, '0.6.0');
 
-  const outdated = new ActionIntentClient({ cliVersion: '0.5.1' });
+  const outdated = new ActionIntentClient({ cliVersion: '0.5.3' });
   outdated.config = async () => compatibleConfig;
   await assert.rejects(
     outdated.assertCompatible(),
     error => error.code === 'CLIENT_VERSION_UNSUPPORTED',
   );
 
-  const unverifiedMinor = new ActionIntentClient({ cliVersion: '0.6.0' });
-  unverifiedMinor.config = async () => compatibleConfig;
+  const newerMinor = new ActionIntentClient({ cliVersion: '0.7.0' });
+  newerMinor.config = async () => compatibleConfig;
+  assert.equal((await newerMinor.assertCompatible()).minimumCliVersion, '0.6.0');
+
+  const unsupportedMajor = new ActionIntentClient({ cliVersion: '1.0.0' });
+  unsupportedMajor.config = async () => compatibleConfig;
   await assert.rejects(
-    unverifiedMinor.assertCompatible(),
+    unsupportedMajor.assertCompatible(),
     error => error.code === 'CLIENT_VERSION_UNSUPPORTED',
   );
 });
@@ -152,6 +157,70 @@ test('execution plan binds the canonical ERC token standard', () => {
   const plan = buildAcquireExecutionPlan(preview, intent, new Date('2026-08-04T12:00:00.000Z'));
   assert.equal(plan.tokenStandard, 'ERC-721');
   assert.throws(() => buildAcquireExecutionPlan({ ...preview, tokenStandard: 'ERC-1155' }, intent));
+});
+
+test('acquire Task preflight passes the claimed chain and contract address together', async () => {
+  const marker = new Error('deployment lookup reached');
+  const intent = {
+    kind: 'skill.acquire.v1',
+    walletAddr: '0x1111111111111111111111111111111111111111',
+    skillSlug: 'example-finchip',
+    chainId: 56,
+    contractAddr: '0x2222222222222222222222222222222222222222',
+    tokenStandard: 'ERC-1155',
+    maxPriceWei: '10',
+    maxGasFeeWei: '2',
+  };
+  await assert.rejects(
+    actionIntentHandler(intent.kind).prepare(intent, {
+      acquireDependencies: {
+        detailClient: {
+          async get(slug, options) {
+            assert.equal(slug, intent.skillSlug);
+            assert.deepEqual(options, { chain: '56', addr: intent.contractAddr });
+            throw marker;
+          },
+        },
+      },
+    }),
+    error => error === marker,
+  );
+});
+
+test('a later Site-step failure never borrows an earlier transaction hash', () => {
+  const txHash = `0x${'4'.repeat(64)}`;
+  const siteFailure = Object.assign(new Error('sync failed'), { code: 'PRICE_SYNC_FAILED', details: { txHash } });
+  assert.deepEqual(classifyStepFailure({
+    step: { index: 1, kind: 'site_mutation' },
+    broadcast: false,
+  }, siteFailure), {
+    result: 'failed',
+    txHash: null,
+    failureCode: 'PRICE_SYNC_FAILED',
+    retrySafe: true,
+  });
+
+  assert.deepEqual(classifyStepFailure({
+    step: { index: 0, kind: 'chain_transaction' },
+    broadcast: true,
+    txHash,
+  }, siteFailure), {
+    result: 'result_unknown',
+    txHash,
+    failureCode: 'PRICE_SYNC_FAILED',
+    retrySafe: false,
+  });
+
+  assert.deepEqual(classifyStepFailure({
+    step: { index: 0, kind: 'chain_transaction' },
+    broadcast: true,
+    txHash,
+  }, Object.assign(new Error('reverted'), { code: 'TASK_TX_FAILED', details: { txHash } })), {
+    result: 'failed',
+    txHash,
+    failureCode: 'TASK_TX_FAILED',
+    retrySafe: false,
+  });
 });
 
 test('lost broadcast-attempt response authorizes only the same persisted attempt', async () => {

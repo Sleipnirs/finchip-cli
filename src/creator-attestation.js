@@ -67,6 +67,7 @@ export async function executeCreatorAttestation(options) {
     walletClient,
     dryRun = false,
     yes = false,
+    onTxHash,
   } = options;
   if (!account?.address || wallet(sessionWallet) !== wallet(account.address)) {
     throw new AttestationError('WALLET_MISMATCH', 'Site login wallet and configured Agent wallet must match.', 3);
@@ -188,6 +189,7 @@ export async function executeCreatorAttestation(options) {
       functionName: 'setCreatorSignature',
       args: [signature],
     });
+    await onTxHash?.(txHash);
     const receipt = await publicClient.waitForTransactionReceipt({
       hash: txHash,
       timeout: 180_000,
