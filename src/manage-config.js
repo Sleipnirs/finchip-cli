@@ -111,7 +111,7 @@ function validateRuntime(value) {
   }
 }
 
-function validateStringList(value, label, maxItems, maxLength) {
+function validateStringList(value, label, maxItems, maxLength, allowDuplicates = false) {
   if (value === null) return;
   if (!Array.isArray(value)) invalid(`${label} must be an array or null.`);
   if (value.length > maxItems) invalid(`${label} is limited to ${maxItems} items.`);
@@ -121,7 +121,7 @@ function validateStringList(value, label, maxItems, maxLength) {
       invalid(`${label}[${index}] must be 1-${maxLength} characters.`);
     }
     const clean = item.trim();
-    if (seen.has(clean)) invalid(`${label} contains a duplicate item: ${clean}.`);
+    if (!allowDuplicates && seen.has(clean)) invalid(`${label} contains a duplicate item: ${clean}.`);
     seen.add(clean);
   }
 }
@@ -184,7 +184,7 @@ function validateInstructionOverrides(value) {
     assertNullableText(value.prerequisites, 2000, 'instructionOverrides.prerequisites');
   }
   if (Object.hasOwn(value, 'steps')) {
-    validateStringList(value.steps, 'instructionOverrides.steps', 12, 500);
+    validateStringList(value.steps, 'instructionOverrides.steps', 12, 500, true);
   }
   if (Object.hasOwn(value, 'examplePrompt')) {
     assertNullableText(value.examplePrompt, 600, 'instructionOverrides.examplePrompt');
@@ -257,6 +257,55 @@ export function validateManageDocument(value) {
   return value;
 }
 
+function normalizedText(value) {
+  if (value === null) return null;
+  const clean = value.trim();
+  return clean || null;
+}
+
+function normalizedList(value) {
+  if (value === null) return null;
+  const items = value.map(item => item.trim()).filter(Boolean);
+  return items.length ? items : null;
+}
+
+function normalizeInformationPatch(value) {
+  if (value === null) return null;
+  const next = {};
+  for (const [key, fieldValue] of Object.entries(value)) {
+    if (Object.hasOwn(INFORMATION_LIST_FIELDS, key)) next[key] = normalizedList(fieldValue);
+    else if (Object.hasOwn(INFORMATION_TEXT_LIMITS, key)) next[key] = normalizedText(fieldValue);
+    else next[key] = fieldValue;
+  }
+  return next;
+}
+
+function normalizeInstructionPatch(value) {
+  const next = {};
+  for (const [key, fieldValue] of Object.entries(value)) {
+    if (key === 'runtime' && fieldValue && typeof fieldValue === 'object') {
+      next.runtime = Object.fromEntries(Object.entries(fieldValue).map(([runtimeKey, runtimeValue]) => (
+        [runtimeKey, normalizedText(runtimeValue)]
+      )));
+    } else if (['steps', 'troubleshooting', 'knownLimitations'].includes(key)) {
+      next[key] = normalizedList(fieldValue);
+    } else if (key === 'exampleOutput' && Array.isArray(fieldValue)) {
+      next.exampleOutput = fieldValue.length ? fieldValue.map(row => ({
+        label: row.label.trim(), value: row.value.trim(),
+      })) : null;
+    } else if (key === 'parameters' && Array.isArray(fieldValue)) {
+      next.parameters = fieldValue.length ? fieldValue.map(row => ({
+        name: row.name.trim(), description: row.description.trim(),
+      })) : null;
+    } else if (['prerequisites', 'examplePrompt'].includes(key)) {
+      next[key] = normalizedText(fieldValue);
+    } else {
+      next[key] = fieldValue;
+    }
+  }
+  return next;
+}
+
 export function buildManagePatch(document, relatedSkillIds = []) {
   const patch = {};
   if (Object.hasOwn(document, 'displayOverrides')) {
@@ -267,8 +316,12 @@ export function buildManagePatch(document, relatedSkillIds = []) {
     }
     patch.displayOverrides = displayOverrides;
   }
-  if (Object.hasOwn(document, 'informationOverrides')) patch.informationOverrides = document.informationOverrides;
-  if (Object.hasOwn(document, 'instructionOverrides')) patch.instructionOverrides = document.instructionOverrides;
+  if (Object.hasOwn(document, 'informationOverrides')) {
+    patch.informationOverrides = normalizeInformationPatch(document.informationOverrides);
+  }
+  if (Object.hasOwn(document, 'instructionOverrides')) {
+    patch.instructionOverrides = normalizeInstructionPatch(document.instructionOverrides);
+  }
   if (Object.hasOwn(document, 'supportedAgents')) {
     patch.supportedAgents = document.supportedAgents.map(agent => ({
       key: agent.key,
@@ -349,8 +402,53 @@ function compareOrdered(requested, actual) {
   };
 }
 
+function jsonValuesEqual(left, right) {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right)
+      && left.length === right.length
+      && left.every((item, index) => jsonValuesEqual(item, right[index]));
+  }
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) => key === rightKeys[index] && jsonValuesEqual(left[key], right[key]));
+}
+
+function collectRequestedValueMismatches(expected, actual, path, mismatches) {
+  if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
+    if (!actual || typeof actual !== 'object' || Array.isArray(actual)) {
+      mismatches.push({ field: path, requested: expected, actual });
+      return;
+    }
+    for (const key of Object.keys(expected)) {
+      collectRequestedValueMismatches(expected[key], actual[key], `${path}.${key}`, mismatches);
+    }
+    return;
+  }
+  if (!jsonValuesEqual(expected, actual)) mismatches.push({ field: path, requested: expected, actual });
+}
+
 export function verifyManagedCollections(document, payload) {
   const mismatches = [];
+  if (Object.hasOwn(document, 'informationOverrides')) {
+    const requested = normalizeInformationPatch(document.informationOverrides);
+    const actual = payload?.skill?.information_overrides;
+    if (requested === null) {
+      if (!jsonValuesEqual(actual, {})) mismatches.push({ field: 'informationOverrides', requested: {}, actual });
+    } else {
+      collectRequestedValueMismatches(requested, actual, 'informationOverrides', mismatches);
+    }
+  }
+  if (Object.hasOwn(document, 'instructionOverrides')) {
+    collectRequestedValueMismatches(
+      normalizeInstructionPatch(document.instructionOverrides),
+      payload?.skill?.instruction_overrides,
+      'instructionOverrides',
+      mismatches,
+    );
+  }
   if (Object.hasOwn(document, 'supportedAgents')) {
     const requested = document.supportedAgents.map(agent => agent.key);
     const actual = Array.isArray(payload?.supportedAgents) ? payload.supportedAgents.map(agent => agent.key) : [];
@@ -370,8 +468,8 @@ export function verifyManagedCollections(document, payload) {
     mutationApplied: true,
     requested: first.requested,
     actual: first.actual,
-    missing: first.missing,
-    unexpected: first.unexpected,
+    missing: first.missing ?? [],
+    unexpected: first.unexpected ?? [],
     mismatches,
   };
 }

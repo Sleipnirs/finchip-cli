@@ -110,9 +110,9 @@ test('manage document validates nested fields and converts only Site text-null f
     () => validateManageDocument({ instructionOverrides: null }),
     error => error.code === 'MANAGE_INVALID',
   );
-  assert.throws(
-    () => validateManageDocument({ instructionOverrides: { steps: ['same', 'same'] } }),
-    error => error.code === 'MANAGE_INVALID',
+  assert.deepEqual(
+    validateManageDocument({ instructionOverrides: { steps: ['same', 'same'] } }),
+    { instructionOverrides: { steps: ['same', 'same'] } },
   );
 });
 
@@ -188,6 +188,27 @@ test('post-PATCH verification detects silently dropped or reordered collections'
   assert.equal(mismatch.code, 'MANAGE_VERIFICATION_FAILED');
   assert.equal(mismatch.mutationApplied, true);
   assert.deepEqual(mismatch.missing, ['claude-code']);
+});
+
+test('post-PATCH verification detects changed Information and Instruction content', () => {
+  assert.equal(verifyManagedCollections({
+    informationOverrides: { capabilities: ['Audit code'] },
+    instructionOverrides: { steps: ['Run', 'Run'] },
+  }, {
+    skill: {
+      information_overrides: { capabilities: ['Audit code'], releaseNotes: 'Existing' },
+      instruction_overrides: { steps: ['Run', 'Run'], examplePrompt: 'Existing' },
+    },
+  }), null);
+
+  const mismatch = verifyManagedCollections({
+    informationOverrides: { capabilities: ['x'.repeat(240)] },
+  }, {
+    skill: { information_overrides: { capabilities: ['x'.repeat(239)] } },
+  });
+  assert.equal(mismatch.code, 'MANAGE_VERIFICATION_FAILED');
+  assert.equal(mismatch.mutationApplied, true);
+  assert.equal(mismatch.mismatches[0].field, 'informationOverrides.capabilities');
 });
 
 test('manage get follows canonical slug and apply sends cookie-only allowlisted PATCH with readback', async () => {
