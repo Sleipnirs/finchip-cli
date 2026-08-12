@@ -56,6 +56,9 @@ export function mapManageHttpError(response, payload, fallback = 'Skill manageme
   }
   if (response.status === 413) return new ManageError('MANAGE_UPLOAD_TOO_LARGE', message, 3);
   if (response.status >= 500) return new ManageError('MANAGE_SERVICE_UNAVAILABLE', message, 5);
+  if (response.status === 400 && ['INSTRUCTION_REQUIRED_FIELDS_MISSING', 'MANAGE_CONTENT_INVALID'].includes(serverCode)) {
+    return new ManageError(serverCode, message, 3);
+  }
   return new ManageError('MANAGE_INVALID', message, 3);
 }
 

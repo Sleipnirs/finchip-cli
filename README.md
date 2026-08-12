@@ -527,7 +527,7 @@ Remove-Item -LiteralPath $verifyDir -Recurse
 
 0.6.1 修复 Agent Task Acquire 在交易广播后记录交易哈希时把内部预演对象误作链上步骤编号的问题。0.6.0 不应领取或恢复 Acquire Action Intent；必须先升级到 0.6.1 或更高的兼容版本。
 
-0.7.0 支持拆分后的 Skill Information/Instruction Manage 合约，并在旧 Site 不支持新字段时于写入前明确拒绝，避免静默忽略更新。它会回读核对新内容字段，保留有序 steps 中的重复措辞，并拒绝清空已实行必填约束的整个 Instruction 对象；这些输入契约变化因此使用新的 0.7 minor 版本。
+0.7.0 支持拆分后的 Skill Information/Instruction Manage 合约，并在旧 Site 不支持新字段时于写入前明确拒绝，避免静默忽略更新。它会回读核对新内容字段，保留有序 steps 中的重复措辞，并拒绝清空已实行必填约束的整个 Instruction 对象；服务端也不再静默截断超过 160 字符的 `runtime.*` 值，而是与 CLI 本地校验一致地拒绝请求。这些输入契约变化因此使用新的 0.7 minor 版本。
 
 ## Links
 

@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import test from 'node:test';
 
 import { saveOriginCredentials } from '../src/auth-client.js';
+import { mapManageHttpError } from '../src/commands/manage.js';
 import {
   assertManageContractSupported,
   buildEditableManageState,
@@ -18,6 +19,21 @@ import {
 const ADDR = '0x1111111111111111111111111111111111111111';
 const SKILL_ID = '00000000-0000-4000-8000-000000000001';
 const RELATED_ID = '00000000-0000-4000-8000-000000000002';
+
+test('Manage HTTP errors preserve only stable Site content codes', () => {
+  assert.equal(mapManageHttpError(
+    { status: 400 },
+    { code: 'INSTRUCTION_REQUIRED_FIELDS_MISSING', error: 'Required.' },
+  ).code, 'INSTRUCTION_REQUIRED_FIELDS_MISSING');
+  assert.equal(mapManageHttpError(
+    { status: 400 },
+    { code: 'MANAGE_CONTENT_INVALID', error: 'Invalid.' },
+  ).code, 'MANAGE_CONTENT_INVALID');
+  assert.equal(mapManageHttpError(
+    { status: 400 },
+    { code: 'UNTRUSTED_SERVER_CODE', error: 'Invalid.' },
+  ).code, 'MANAGE_INVALID');
+});
 
 function runCli(args, env = {}, stdin = 'ignore') {
   return new Promise((resolve, reject) => {
