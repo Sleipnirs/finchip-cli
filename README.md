@@ -331,6 +331,10 @@ finchip skill price sync my-skill-finchip \
 
 `skill manage get` 返回完整 Creator 状态和可直接编辑的 `editable` JSON。`manage apply` 接受最多 1 MiB 的声明式 JSON，`--file -` 可从 stdin 读取。省略字段保持不变；`supportedAgents` 与 `relatedSkillSlugs` 一旦出现就整体替换，空数组表示清空。可清除字段使用 `null` 或空字符串。
 
+CLI 0.6.2 的 `editable.informationOverrides` 管理公开 Information，包括 capabilities、use cases、audience、release notes、tested models、API key/网络要求、Python/Node 版本和购买收益。`editable.instructionOverrides` 管理实际使用说明，包括 prerequisites、steps、prompt/output examples、parameters、troubleshooting 和 known limitations；其中修改 Instruction 后，最终状态必须同时具有非空 steps、examplePrompt 与 exampleOutput。CLI 允许提交部分对象，由 Site 与当前状态合并后执行该完整性校验。
+
+新版字段只会发送给明确返回 `skill.information_overrides` 能力标志的 Site。若目标 Site 尚未支持该合约，CLI 在 PATCH 前返回 `MANAGE_CONTRACT_UNSUPPORTED`，且 `mutationApplied: false`；旧的 display、legacy instruction、Agent 与关联 Skill 管理仍可继续使用。
+
 Manage API 只使用 `finchip login` 保存的 Cookie，不发送 viewer signature、`wallet_addr` 或 FC key。`imagePath` 只能通过后续的图片命令管理：它不会出现在 `editable`，也不会由 `manage apply` 发回 Site。关联 Skill 在 CLI 中使用 slug，发送 PATCH 前会精确解析为 Site 内部 ID；PATCH 后 CLI 会重新读取状态，检查 Agent 与关联 Skill 是否被 Site 原样保存。
 
 图片支持 JPG、PNG、WebP、GIF，最大 4 MiB；CLI 会同时校验扩展名和 magic bytes。已有图片的替换需要 `--yes`，首次上传不需要。Site 当前没有单独删除图片的 Manage API，因此 CLI 不提供 image remove。
@@ -522,6 +526,8 @@ Remove-Item -LiteralPath $verifyDir -Recurse
 0.6.0 将 Site 发布的最低支持版本从 0.5.0 提升为 0.6.0。0.5.x 会在每条 CLI 命令上收到 `CLI_UPDATE_REQUIRED`，新的 CLI 登录和 Action Intent 领取也会被 Site 拒绝；版本提醒本身不会统一终止仍可在本地执行或已登录的其他命令。
 
 0.6.1 修复 Agent Task Acquire 在交易广播后记录交易哈希时把内部预演对象误作链上步骤编号的问题。0.6.0 不应领取或恢复 Acquire Action Intent；必须先升级到 0.6.1 或更高的兼容版本。
+
+0.6.2 支持拆分后的 Skill Information/Instruction Manage 合约，并在旧 Site 不支持新字段时于写入前明确拒绝，避免静默忽略更新。
 
 ## Links
 

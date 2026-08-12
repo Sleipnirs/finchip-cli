@@ -5,6 +5,7 @@ import { resolveChain } from '../chains.js';
 import {
   MANAGE_INPUT_MAX_BYTES,
   ManageError,
+  assertManageContractSupported,
   buildEditableManageState,
   buildManagePatch,
   validateManageDocument,
@@ -190,6 +191,7 @@ export async function cmdSkillManageApply(slug, options = {}) {
     const client = new FinchipAuthClient();
     await client.requireSession();
     const before = await loadManageState(client, slug, deployment);
+    assertManageContractSupported(document, before.payload);
     const relatedIds = await resolveRelatedSkillIds(
       client,
       before.canonicalSlug,

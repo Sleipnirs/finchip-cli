@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import { saveOriginCredentials } from '../src/auth-client.js';
 import {
+  assertManageContractSupported,
   buildEditableManageState,
   buildManagePatch,
   validateManageDocument,
@@ -47,8 +48,25 @@ test('manage document validates nested fields and converts only Site text-null f
     instructionOverrides: {
       audience: ['creator', 'builder'],
       runtime: { tools: 'node', permissions: null },
-      examplePrompt: null,
+      prerequisites: 'Node.js 22+',
+      steps: ['Open the project', 'Run the audit'],
+      examplePrompt: 'Audit this repository.',
       exampleOutput: [{ label: 'Result', value: 'ok' }],
+      parameters: [{ name: 'path', description: 'Repository path' }],
+      troubleshooting: ['Confirm the path exists.'],
+      knownLimitations: ['Does not execute findings.'],
+    },
+    informationOverrides: {
+      capabilities: ['Audit source code'],
+      useCases: ['Pre-release review'],
+      audience: ['Security engineers'],
+      releaseNotes: 'Adds framework detection.',
+      testedModels: ['GPT-5'],
+      requiresApiKey: false,
+      networkAccess: null,
+      pythonVersion: null,
+      nodeVersion: '22',
+      purchaseBenefits: 'Reusable audit workflow.',
     },
     supportedAgents: [{ key: 'codex-cli', note: 'tested' }],
     relatedSkillSlugs: ['other_finchip'],
@@ -62,6 +80,7 @@ test('manage document validates nested fields and converts only Site text-null f
       creatorStudioDescription: '',
       videoUrl: null,
     },
+    informationOverrides: input.informationOverrides,
     instructionOverrides: input.instructionOverrides,
     supportedAgents: input.supportedAgents,
     relatedSkillIds: ['00000000-0000-4000-8000-000000000001'],
@@ -83,6 +102,18 @@ test('manage document validates nested fields and converts only Site text-null f
     () => validateManageDocument({ instructionOverrides: { runtime: { typo: 'x' } } }),
     error => error.code === 'MANAGE_INVALID',
   );
+  assert.throws(
+    () => validateManageDocument({ informationOverrides: { requiresApiKey: 'sometimes' } }),
+    error => error.code === 'MANAGE_INVALID',
+  );
+  assert.throws(
+    () => validateManageDocument({ instructionOverrides: null }),
+    error => error.code === 'MANAGE_INVALID',
+  );
+  assert.throws(
+    () => validateManageDocument({ instructionOverrides: { steps: ['same', 'same'] } }),
+    error => error.code === 'MANAGE_INVALID',
+  );
 });
 
 test('editable manage state excludes imagePath but preserves raw state', () => {
@@ -96,6 +127,7 @@ test('editable manage state excludes imagePath but preserves raw state', () => {
         summary: 'summary',
       },
       instruction_overrides: { audience: ['builder'] },
+      information_overrides: { capabilities: ['Audit source code'] },
     },
     supportedAgents: [{ key: 'codex-cli', note: 'tested', iconUrl: '/codex.svg' }],
     relatedSkills: [{ id: 'skill-2', slug: 'other_finchip' }],
@@ -106,6 +138,39 @@ test('editable manage state excludes imagePath but preserves raw state', () => {
   assert.equal(Object.hasOwn(result.editable.displayOverrides, 'imagePath'), false);
   assert.deepEqual(result.editable.relatedSkillSlugs, ['other_finchip']);
   assert.deepEqual(result.editable.supportedAgents, [{ key: 'codex-cli', note: 'tested' }]);
+  assert.deepEqual(result.editable.informationOverrides, { capabilities: ['Audit source code'] });
+
+  const legacy = buildEditableManageState({
+    ...payload,
+    skill: { ...payload.skill },
+  });
+  delete legacy.state.skill.information_overrides;
+  const rebuiltLegacy = buildEditableManageState(legacy.state);
+  assert.equal(Object.hasOwn(rebuiltLegacy.editable, 'informationOverrides'), false);
+});
+
+test('split Information/Instruction writes require a Site capability marker before mutation', () => {
+  const document = { informationOverrides: { capabilities: ['Audit source code'] } };
+  assert.doesNotThrow(() => assertManageContractSupported(document, {
+    skill: { information_overrides: {} },
+  }));
+  assert.throws(
+    () => assertManageContractSupported(document, { skill: { instruction_overrides: {} } }),
+    error => error.code === 'MANAGE_CONTRACT_UNSUPPORTED'
+      && error.details?.requiredContract === 'skill_information_instruction_v1'
+      && error.details?.mutationApplied === false,
+  );
+  assert.throws(
+    () => assertManageContractSupported(
+      { instructionOverrides: { steps: ['Run the audit'] } },
+      { skill: { instruction_overrides: {} } },
+    ),
+    error => error.code === 'MANAGE_CONTRACT_UNSUPPORTED',
+  );
+  assert.doesNotThrow(() => assertManageContractSupported(
+    { instructionOverrides: { audience: ['builder'] } },
+    { skill: { instruction_overrides: {} } },
+  ));
 });
 
 test('post-PATCH verification detects silently dropped or reordered collections', () => {
@@ -128,6 +193,12 @@ test('post-PATCH verification detects silently dropped or reordered collections'
 test('manage get follows canonical slug and apply sends cookie-only allowlisted PATCH with readback', async () => {
   const requests = [];
   let applied = false;
+  const informationOverrides = { capabilities: ['Audit source code'] };
+  const instructionOverrides = {
+    steps: ['Run the audit'],
+    examplePrompt: 'Audit this repository.',
+    exampleOutput: [{ label: 'Result', value: 'ok' }],
+  };
   const server = createServer((req, res) => {
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
@@ -162,7 +233,8 @@ test('manage get follows canonical slug and apply sends cookie-only allowlisted 
             chip_address: ADDR,
             chain_id: 56,
             display_overrides: { imagePath: 'skills/skill-1/display/old.png', summary: applied ? null : 'old' },
-            instruction_overrides: {},
+            information_overrides: applied ? informationOverrides : {},
+            instruction_overrides: applied ? instructionOverrides : {},
           },
           supportedAgents: applied ? [{ key: 'codex-cli', note: 'tested' }] : [],
           relatedSkills: applied ? [{ id: RELATED_ID, slug: 'other-finchip' }] : [],
@@ -178,6 +250,8 @@ test('manage get follows canonical slug and apply sends cookie-only allowlisted 
       if (req.url === '/api/v2/skills/demo-finchip/manage' && req.method === 'PATCH') {
         assert.deepEqual(body, {
           displayOverrides: { summary: '' },
+          informationOverrides,
+          instructionOverrides,
           supportedAgents: [{ key: 'codex-cli', note: 'tested' }],
           relatedSkillIds: [RELATED_ID],
           addr: ADDR,
@@ -201,6 +275,8 @@ test('manage get follows canonical slug and apply sends cookie-only allowlisted 
   const configPath = join(root, 'manage.json');
   writeFileSync(configPath, JSON.stringify({
     displayOverrides: { summary: null },
+    informationOverrides,
+    instructionOverrides,
     supportedAgents: [{ key: 'codex-cli', note: 'tested' }],
     relatedSkillSlugs: ['other_finchip'],
   }));
@@ -215,6 +291,7 @@ test('manage get follows canonical slug and apply sends cookie-only allowlisted 
     assert.equal(getResult.code, 'SKILL_MANAGE_STATE');
     assert.equal(getResult.slug, 'demo-finchip');
     assert.equal(Object.hasOwn(getResult.editable.displayOverrides, 'imagePath'), false);
+    assert.deepEqual(getResult.editable.informationOverrides, {});
 
     const apply = await runCli([
       'skill', 'manage', 'apply', 'alias', '--file', configPath,
@@ -225,6 +302,52 @@ test('manage get follows canonical slug and apply sends cookie-only allowlisted 
     const patchRequest = requests.find(request => request.method === 'PATCH');
     assert.match(patchRequest.cookie, /finchip_account_session=account-secret/);
     assert.equal(patchRequest.authorization, undefined);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('manage apply rejects split fields against an older Site before PATCH', async () => {
+  let patchCount = 0;
+  const server = createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/api/auth/session') {
+      res.end(JSON.stringify({ authenticated: true, identity: { userId: 'user-1' } }));
+      return;
+    }
+    if (req.url === '/api/v2/skills/demo-finchip/manage' && req.method === 'GET') {
+      res.end(JSON.stringify({
+        skill: { id: SKILL_ID, slug: 'demo-finchip', instruction_overrides: {} },
+        supportedAgents: [],
+        relatedSkills: [],
+      }));
+      return;
+    }
+    if (req.method === 'PATCH') patchCount += 1;
+    res.statusCode = 500;
+    res.end(JSON.stringify({ error: 'unexpected request' }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const root = mkdtempSync(join(tmpdir(), 'finchip-manage-legacy-'));
+  const credentialsPath = join(root, 'credentials.json');
+  const configPath = join(root, 'manage.json');
+  writeFileSync(configPath, JSON.stringify({
+    informationOverrides: { capabilities: ['Audit source code'] },
+  }));
+  saveOriginCredentials(origin, {
+    finchip_account_session: { value: 'account-secret', expiresAt: null },
+  }, { path: credentialsPath });
+  const env = { FINCHIP_API_URL: origin, FINCHIP_CREDENTIALS_PATH: credentialsPath };
+  try {
+    const apply = await runCli([
+      'skill', 'manage', 'apply', 'demo-finchip', '--file', configPath, '--json',
+    ], env);
+    assert.equal(apply.code, 3, `${apply.stderr}\n${apply.stdout}`);
+    const result = JSON.parse(apply.stdout);
+    assert.equal(result.code, 'MANAGE_CONTRACT_UNSUPPORTED');
+    assert.equal(result.mutationApplied, false);
+    assert.equal(patchCount, 0);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
