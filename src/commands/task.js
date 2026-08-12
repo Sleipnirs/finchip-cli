@@ -9,7 +9,7 @@ import { assertSameFinchipOrigin, parseFinchipTaskUrl } from '../site-origin.js'
 import { listTaskRecords, loadTaskRecord, saveTaskRecord } from '../task-records.js';
 import { emitFailure, emitResult, hd, inf, ok, sep, wrn } from '../utils.js';
 
-const CLI_VERSION = '0.6.1';
+const CLI_VERSION = '0.7.0';
 const QUERY_ONLY_STATUSES = new Set(['broadcasting', 'broadcast', 'executing', 'recovery_required', 'result_unknown', 'confirmed', 'completed', 'failed', 'denied', 'cancelled', 'expired']);
 const AMBIGUOUS_BROADCAST_ERRORS = new Set([
   'RATE_LIMITED',

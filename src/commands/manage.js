@@ -5,6 +5,7 @@ import { resolveChain } from '../chains.js';
 import {
   MANAGE_INPUT_MAX_BYTES,
   ManageError,
+  assertManageContractSupported,
   buildEditableManageState,
   buildManagePatch,
   validateManageDocument,
@@ -55,6 +56,9 @@ export function mapManageHttpError(response, payload, fallback = 'Skill manageme
   }
   if (response.status === 413) return new ManageError('MANAGE_UPLOAD_TOO_LARGE', message, 3);
   if (response.status >= 500) return new ManageError('MANAGE_SERVICE_UNAVAILABLE', message, 5);
+  if (response.status === 400 && ['INSTRUCTION_REQUIRED_FIELDS_MISSING', 'MANAGE_CONTENT_INVALID'].includes(serverCode)) {
+    return new ManageError(serverCode, message, 3);
+  }
   return new ManageError('MANAGE_INVALID', message, 3);
 }
 
@@ -190,6 +194,7 @@ export async function cmdSkillManageApply(slug, options = {}) {
     const client = new FinchipAuthClient();
     await client.requireSession();
     const before = await loadManageState(client, slug, deployment);
+    assertManageContractSupported(document, before.payload);
     const relatedIds = await resolveRelatedSkillIds(
       client,
       before.canonicalSlug,

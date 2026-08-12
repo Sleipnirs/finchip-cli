@@ -30,7 +30,7 @@ test('published CLI fixes wallet and authenticated traffic to the production ori
 test('published CLI allows help and version while origin override is set', () => {
   const version = runPublishedCli(['--version']);
   assert.equal(version.status, 0, version.stderr);
-  assert.equal(version.stdout.trim(), '0.6.1');
+  assert.equal(version.stdout.trim(), '0.7.0');
   assert.doesNotMatch(version.stderr, /assertNoPublicOriginOverride|CliError/);
 
   const help = runPublishedCli(['--help']);

@@ -127,7 +127,7 @@ test('cached update policy warns on every command without corrupting JSON stdout
   writeFileSync(join(configDirectory, 'version-policy.json'), JSON.stringify({
     schemaVersion: 1,
     fetchedAt: new Date().toISOString(),
-    policy: { ...policy, minimumSupportedVersion: '0.6.2', recommendedVersion: '0.6.2' },
+    policy: { ...policy, minimumSupportedVersion: '0.7.1', recommendedVersion: '0.7.1' },
   }));
   const env = { ...process.env, HOME: home, USERPROFILE: home };
   delete env.FINCHIP_API_URL;
@@ -145,5 +145,5 @@ test('cached update policy warns on every command without corrupting JSON stdout
     cwd: process.cwd(), env, encoding: 'utf8',
   });
   assert.equal(textResult.status, 2, `${textResult.stderr}\n${textResult.stdout}`);
-  assert.match(textResult.stderr, /\[FinChip\] Update required: installed 0\.6\.1; recommended 0\.6\.2/);
+  assert.match(textResult.stderr, /\[FinChip\] Update required: installed 0\.7\.0; recommended 0\.7\.1/);
 });
